@@ -38,7 +38,7 @@ var SIMX=(function(){
  function dropSources(item){ const d=EXTRA.drops[item]; const out=[]; if(d){ for(const [id,c] of Object.entries(d.n)) out.push({t:'n',id:+id,p:c!=null?c/100:null}); for(const [id,c] of Object.entries(d.o)) out.push({t:'o',id:+id,p:c!=null?c/100:1}); }
    if(!out.length){ const it=DB.i[item]; for(const id of (it&&it.d)||[]) out.push({t:'n',id,p:null}); for(const id of (it&&it.od)||[]) out.push({t:'o',id,p:1}); } return out; }
  // ---------- grounds: where an objective's work is done ----------
- const GC=new Map();
+ const GC=new Map(); let OC=new WeakMap();
  function groundFor(q,line,type,ids,pos,need){ // returns {pts:[{X,Y,z,id,lv,p}], center}
    const key=q+'|'+line+'|'+type+ids.map(x=>x.id).join(',')+'|'+(pos?Math.round(pos.X/200)+','+Math.round(pos.Y/200):'')+'|'+Math.ceil(Math.log2(1+(need||1))); if(GC.has(key)) return GC.get(key);
    const all=[]; for(const s of ids) for(const p of entPts(s.t,s.id)){ if(p.dg) continue; all.push({X:p.X,Y:p.Y,z:p.z,id:s.id,t:s.t,p:s.p,lv:s.t==='n'?nLv(s.id):null}); }
@@ -67,7 +67,8 @@ var SIMX=(function(){
  const nearest=(pts,p)=>{ let b=null,bd=1e18; for(const x of pts){ if(x.dg) continue; const d=p?(cont(x)===cont(p)?hyp(x,p):1e7+hyp(x,p)):0; if(d<bd){bd=d;b=x;} } return b; };
  // ---------- killing at a ground: pulls of up to pullSize targets, walking a nearest-neighbour tour; respawns after a full sweep ----------
  function work(s,g,kills,onKill){ if(!g||!g.pts.length||kills<=0) return 0; const pts=g.pts; const start=s.pos&&cont(s.pos)===cont(g.center)?s.pos:g.center; move(s,nearest(pts,start)||g.center);
-   const left=pts.slice(); const order=[]; let cur=s.pos; while(left.length){ let bi=0,bd=1e18; for(let i=0;i<left.length;i++){ const d=hyp(left[i],cur); if(d<bd){bd=d;bi=i;} } cur=left.splice(bi,1)[0]; order.push(cur); }
+   let om=OC.get(g); if(!om){ om=new Map(); OC.set(g,om); } const okey=Math.round(s.pos.X/50)+','+Math.round(s.pos.Y/50); let order=om.get(okey);
+   if(!order){ const left=pts.slice(); order=[]; let cur=s.pos; while(left.length){ let bi=0,bd=1e18; for(let i=0;i<left.length;i++){ const d=hyp(left[i],cur); if(d<bd){bd=d;bi=i;} } cur=left.splice(bi,1)[0]; order.push(cur); } om.set(okey,order); }
    const m=order.length, run=runSp(s); const w0=s.c.waitSec, t0=s.t; const killedAt=new Array(m).fill(-1e9); let done=0, i=0, inPull=0;
    while(done<kills){ const k=i%m; const p=order[k]; const w=hyp(s.pos,p)/run; s.t+=w; s.c.walkSec+=w; s.pos=p; const ready=killedAt[k]+resp(p.id); if(ready>s.t){ const wt=ready-s.t; s.t+=wt; s.c.waitSec+=wt; }
      const ml=p.lv!=null?Math.round(p.lv):s.L; const e=p.t==='n'&&elite(p.id); const ks=p.t==='o'?PR.interact/(PR.splitObjects?s.party:1):PR.perMob*(e?PR.eliteMul:1); s.t+=ks; if(p.t==='o') s.c.interacts++; else { s.c.kills++; s.c.killSec+=ks; }
@@ -116,6 +117,7 @@ var SIMX=(function(){
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    for(let k=k0;k<steps.length;k++){ R.k=k; if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
+   if(snaps) snaps[steps.length]=clone(s);
    return {t:s.t,tg:tAt,L:s.L,xp:s.xp,errs:s.errs,soft:R.soft,err:R.err,lvT,c:s.c,state:s,snaps}; }
  return {trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};
 })();
