@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // usage: node tools/build.js <options.json> <out.json>
-// options: {char:{...route.char}, tgt, ms, growMs, K, lns, fly, block:[zone names], runs:[...], forceRuns:[...], chain:[qids], seed:[steps], params:{engine params}}
+// options: {freeze: n (keep the first n seed steps as they are),char:{...route.char}, tgt, ms, growMs, K, lns, fly, block:[zone names], runs:[...], forceRuns:[...], chain:[qids], seed:[steps], params:{engine params}}
 'use strict';
 const fs=require('fs'), path=require('path'), vm=require('vm');
 const [OPT,OUT]=process.argv.slice(2); const opt=JSON.parse(fs.readFileSync(OPT,'utf8'));

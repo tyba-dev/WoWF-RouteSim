@@ -3,15 +3,16 @@
 // dungeons, a forced chain), flights, then large-neighbourhood search. Every candidate is timed by the engine,
 // resumed from the snapshot just before the first changed step. Runs inside the planner context (loaded by index.js).
 'use strict';
-var ROUTEBUILD=function(opt){
- const T0=Date.now(), MS=opt.ms||1800000, TGT=opt.tgt||40, K=opt.K||40, tol=opt.lvTol??1;
- const CH0=opt.char; const ch=Object.assign({},CH0);
- // HC: block walking through dangerous zones, and their flight paths
- if(opt.block&&NAV){ const ids=Object.entries(META.zones).filter(([z,Z])=>opt.block.includes(Z.n)).map(([z])=>+z);
+// HC: block walking through dangerous zones, and their flight paths (shared with tools/postpass.js)
+var ROUTEBLOCK=function(names){ if(!names||!names.length||!NAV||ROUTEBLOCK.done) return; ROUTEBLOCK.done=1; const opt={block:names}; const ids=Object.entries(META.zones).filter(([z,Z])=>opt.block.includes(Z.n)).map(([z])=>+z);
    for(const z of ids){ const a=zp2plane(z,0,0), b=zp2plane(z,100,100); const x0=Math.min(a.X,b.X),x1=Math.max(a.X,b.X),y0=Math.min(a.Y,b.Y),y1=Math.max(a.Y,b.Y);
      const c0=Math.max(0,Math.floor((x0-NAV.x0)/NAV.cell)), c1=Math.min(NAV.w-1,Math.floor((x1-NAV.x0)/NAV.cell)), r0=Math.max(0,Math.floor((y0-NAV.y0)/NAV.cell)), r1=Math.min(NAV.h-1,Math.floor((y1-NAV.y0)/NAV.cell));
      for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){ const i=r*NAV.w+c; if(!NAV.g[i]) continue; const q=plane2zone(NAV.x0+(c+.5)*NAV.cell,NAV.y0+(r+.5)*NAV.cell); const qz=q?(q.z!=null?q.z:q):null; if(+qz===z) NAV.g[i]=0; } }
-   PATHS.clear(); const bz=new Set(ids); const tn=taxiNodes; taxiNodes=(...a)=>tn(...a).filter(n=>{ const p=taxiPt(n.id); if(!p) return false; const q=plane2zone(p.X,p.Y); const qz=q?(q.z!=null?q.z:q):null; return !bz.has(+qz); }); }
+   PATHS.clear(); const bz=new Set(ids); const tn=taxiNodes; taxiNodes=(...a)=>tn(...a).filter(n=>{ const p=taxiPt(n.id); if(!p) return false; const q=plane2zone(p.X,p.Y); const qz=q?(q.z!=null?q.z:q):null; return !bz.has(+qz); }); };
+var ROUTEBUILD=function(opt){
+ const T0=Date.now(), MS=opt.ms||1800000, TGT=opt.tgt||40, K=opt.K||40, tol=opt.lvTol??1;
+ const CH0=opt.char; const ch=Object.assign({},CH0);
+ ROUTEBLOCK(opt.block);
  let steps=(opt.seed||[]).map(s=>Object.assign({},s));
  const cont=z=>META.zones[z]?.m; const HOMES=new Set(opt.conts||[0,1]); const BZ=new Set(Object.entries(META.zones).filter(([z,Z])=>(opt.block||[]).includes(Z.n)).map(([z])=>+z)); const okP=p=>p&&!p.dg&&HOMES.has(cont(p.z))&&!BZ.has(+p.z);
  const gray=L=>L<10?5:L<20?6:L<30?7:L<40?8:9; const need=totalXP(TGT,0);
@@ -34,7 +35,7 @@ var ROUTEBUILD=function(opt){
  // distances (boats between continents)
  const BL=[]; for(const l of (NAV.links||[])){ if(!/A/.test(l.f||'')||/^Walk/.test(l.n||'')) continue; const A={X:NAV.x0+((l.ia%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((l.ia/NAV.w)|0)+.5)*NAV.cell}, B={X:NAV.x0+((l.ib%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((l.ib/NAV.w)|0)+.5)*NAV.cell}; const za=plane2zone(A.X,A.Y), zb=plane2zone(B.X,B.Y); if(!za||!zb) continue; A.z=za.z; B.z=zb.z; if(cont(A.z)===cont(B.z)) continue; BL.push({A,B,c:(shipSecs(A,B)||510)*7}); }
  const D=(a,b)=>{ if(!a||!b) return 3000; if(cont(a.z)===cont(b.z)) return Math.hypot(a.X-b.X,a.Y-b.Y); let m=1e6; for(const L of BL){ if(cont(L.A.z)===cont(a.z)&&cont(L.B.z)===cont(b.z)) m=Math.min(m,Math.hypot(a.X-L.A.X,a.Y-L.A.Y)+L.c+Math.hypot(L.B.X-b.X,L.B.Y-b.Y)); if(cont(L.B.z)===cont(a.z)&&cont(L.A.z)===cont(b.z)) m=Math.min(m,Math.hypot(a.X-L.B.X,a.Y-L.B.Y)+L.c+Math.hypot(L.A.X-b.X,L.A.Y-b.Y)); } return m; };
- const insPos=(pts,lv,lo,p)=>{ let best=null; const n=pts.length; for(let k=Math.max(lo,-1);k<n;k++){ if(k>=0&&pts[k].L<lv) continue; if(k<0&&lv>1) continue; const a=k>=0?pts[k].p:null, b=k+1<n?pts[k+1].p:null; const d=(a?D(a,p):0)+(b?D(p,b):0)-(a&&b?D(a,b):0); if(!best||d<best.d) best={k,d}; } return best; };
+ const FZ=opt.freeze||0; const insPos=(pts,lv,lo,p)=>{ let best=null; const n=pts.length; for(let k=Math.max(lo,-1,FZ-1);k<n;k++){ if(k>=0&&pts[k].L<lv) continue; if(k<0&&lv>1) continue; const a=k>=0?pts[k].p:null, b=k+1<n?pts[k+1].p:null; const d=(a?D(a,p):0)+(b?D(p,b):0)-(a&&b?D(a,b):0); if(!best||d<best.d) best={k,d}; } return best; };
  const near=(arr,p)=>{ let b=arr[0],bd=1e18; for(const x of arr){ const d=D(x,p); if(d<bd){bd=d;b=x;} } return b; };
  const build=(c,pts,lo0)=>{ const pc=[]; let lo=(lo0==null?-1:lo0), cost=0; for(const pz of c){ const b=insPos(pts,pz.lv,lo,pz.p); if(!b) return null; pc.push([b.k,pz.steps]); lo=b.k; cost+=b.d; } return {pc,cost}; };
  const apply=pc=>{ const by=new Map(); for(const [k,st] of pc) (by.get(k)||by.set(k,[]).get(k)).push(...st.map(s=>Object.assign({},s,{id:uid(),b20:1}))); const out=[...(by.get(-1)||[])]; steps.forEach((s,k)=>{ out.push(s); const b=by.get(k); if(b) out.push(...b); }); return out; };
@@ -97,7 +98,7 @@ var ROUTEBUILD=function(opt){
  const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
  const deadline=T0+MS; let it=0; let seed=opt.seedRng||12345; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
-   const n=steps.length; const W=Math.min(n-2,(opt.lnsW||80)+Math.floor(rnd()*(opt.lnsW||80))); const a=Math.floor(rnd()*Math.max(1,n-W)); const qs=new Set(), cells=new Set();
+   const n=steps.length; const W=Math.min(n-2,(opt.lnsW||80)+Math.floor(rnd()*(opt.lnsW||80))); const a=FZ+Math.floor(rnd()*Math.max(1,n-W-FZ)); const qs=new Set(), cells=new Set();
    for(let k=a;k<a+W;k++){ const s=steps[k]; if(prot(s)) continue; if(s.q&&!CH.includes(s.q)) qs.add(s.q); if(s.pack&&s.loc){ const p=zp2plane(s.loc.z,s.loc.px,s.loc.py); cells.add(Math.floor(p.X/MC)+','+Math.floor(p.Y/MC)); } }
    const needed=new Set(); for(const s of steps){ if(!s.q||qs.has(s.q)) continue; const x=Q(s.q); for(const p of [...(x?.ps||[]),...(x?.pg||[])]) if(qs.has(p)) needed.add(p); } for(const q of needed) qs.delete(q);
    steps=steps.filter((s,k)=>{ if(s.auto) return false; if(s.q&&qs.has(s.q)&&!prot(s)) return false; if(k>=a&&k<a+W&&s.pack) return false; return true; }); for(const c of cells) usedCell.delete(c);
