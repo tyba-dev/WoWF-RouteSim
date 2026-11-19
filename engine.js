@@ -71,12 +71,13 @@ var SIMX=(function(){
  let TN=null, TNf=null, TNfac=null, FL=null, CK=0; const FT=new Map();
  const tnodes=()=>{ const fac=typeof taxiFac==='function'?taxiFac():''; if(!TN||TNf!==taxiNodes||TNfac!==fac){ TNf=taxiNodes; TNfac=fac; TN=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id),zmin:n.zmin||0})).filter(n=>n.p); FT.clear(); } return TN; };
  const flyT=(a,b)=>{ const k=a+'>'+b; let v=FT.get(k); if(v==null){ const fr=flightRoute(a,b); v=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(a),taxiPt(b))/PR.flySpeed)+PR.flyOver; FT.set(k,v); } return v; };
- const wsec=(a,b,run)=>{ const same=cont(a)===cont(b); const d=hyp(a,b); if(same&&d<5) return 0; let sec; try{ sec=walkSecs(a,b,run,same?d:5000); }catch(e){ sec=null; } if(sec==null||!isFinite(sec)) sec=(same?d:5000)*1.25/run; return sec*PR.detour; };
+ const WM=new Map(); const wsec=(a,b,run)=>{ const k=Math.round(a.X/20)+','+Math.round(a.Y/20)+','+a.z+'|'+Math.round(b.X/20)+','+Math.round(b.Y/20)+','+b.z+'|'+run.toFixed(2); let v=WM.get(k); if(v==null){ v=wsec0(a,b,run); if(WM.size>400000) WM.clear(); WM.set(k,v); } return v; };
+ const wsec0=(a,b,run)=>{ const same=cont(a)===cont(b); const d=hyp(a,b); if(same&&d<5) return 0; let sec; try{ sec=walkSecs(a,b,run,same?d:5000); }catch(e){ sec=null; } if(sec==null||!isFinite(sec)) sec=(same?d:5000)*1.25/run; return sec*PR.detour; };
  function bestFlight(s,a,to,run,direct){ const K=tnodes().filter(n=>s.fps.has(n.id)&&n.zmin<=s.L); const near=(m,p,n)=>K.filter(x=>x.m===m).sort((x,y)=>hyp(x.p,p)-hyp(y.p,p)).slice(0,n);
    let best=null; const ca=cont(a), cb=cont(to);
-   if(ca===cb){ for(const dp of near(ca,a,PR.flyNear)) for(const ds of near(cb,to,PR.flyNear)){ if(dp.id===ds.id) continue; const w1=wsec(a,dp.p,run), w2=wsec(ds.p,to,run); const c=w1+flyT(dp.id,ds.id)+w2; if(c<direct&&(!best||c<best.c)) best={c,legs:[[dp,ds]],w:w1+w2}; } return best; }
+   if(ca===cb){ for(const dp of near(ca,a,PR.flyNear)) for(const ds of near(cb,to,PR.flyNear)){ if(dp.id===ds.id) continue; const f0=flyT(dp.id,ds.id); if(f0+(hyp(a,dp.p)+hyp(ds.p,to))/run>=direct) continue; const w1=wsec(a,dp.p,run), w2=wsec(ds.p,to,run); const c=w1+f0+w2; if(c<direct&&(!best||c<best.c)) best={c,legs:[[dp,ds]],w:w1+w2}; } return best; }
    // another continent: optionally fly to a node on this side, walk (boats) across, optionally fly on the far side
-   const d0=near(ca,a,1)[0], d1=near(cb,to,1)[0]; const xs=[null,...K.filter(x=>x.m===ca&&d0&&x.id!==d0.id)], ys=[null,...K.filter(x=>x.m===cb&&d1&&x.id!==d1.id)];
+   const d0=near(ca,a,1)[0], d1=near(cb,to,1)[0]; const xs=[null,...(d0?K.filter(x=>x.m===ca&&x.id!==d0.id):[])], ys=[null,...(d1?K.filter(x=>x.m===cb&&x.id!==d1.id):[])];
    const pre=x=>x?wsec(a,d0.p,run)+flyT(d0.id,x.id):0, post=y=>y?flyT(y.id,d1.id)+wsec(d1.p,to,run):0;
    for(const x of xs) for(const y of ys){ if(!x&&!y) continue; const c=pre(x)+wsec(x?x.p:a,y?y.p:to,run)+post(y); if(c<direct&&(!best||c<best.c)){ const legs=[]; if(x) legs.push([d0,x]); if(y) legs.push([y,d1]); best={c,legs,x,y}; } }
    return best; }
@@ -143,7 +144,7 @@ var SIMX=(function(){
    if(err){ s.errs++; R.err&&R.err.push([R.k,st.t,st.q||st.kind,err]); } }
  // ---------- public: play a whole route or resume from a snapshot ----------
  function runRested(steps,ch,opt={}){ const RS=opt.rested||ch.rested; if(!RS||!RS.on) return run(steps,ch,opt); let r=run(steps,ch,Object.assign({},opt,{rested:null})); for(let i=0;i<4;i++){ const T=(opt.tgt&&r.tg)||r.t; const st=Math.max(0,T-(RS.hours||50)*3600); const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st})); const d=Math.abs(((opt.tgt&&r2.tg)||r2.t)-T); r=r2; if(d<30) break; } return r; }
- function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); }
+ function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); WM.clear(); FT.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
    FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
