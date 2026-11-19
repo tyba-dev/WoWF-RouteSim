@@ -11,7 +11,8 @@ var SIMX=(function(){
  let TR=null; let CUR={};
  const DEF={ talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
-   detour:1.0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1 };
+   detour:1.0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1,
+   autoFly:0, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
  const hyp=(a,b)=>Math.hypot(a.X-b.X,a.Y-b.Y);
@@ -66,9 +67,31 @@ var SIMX=(function(){
    const ms=spawnsIn(Math.min(a.X,b.X)-45,Math.max(a.X,b.X)+45,Math.min(a.Y,b.Y)-45,Math.max(a.Y,b.Y)+45); const dx=b.X-a.X, dy=b.Y-a.Y, L2=dx*dx+dy*dy; let n=0,x=0,sec=0;
    for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mobXP(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); }
    if(n){ s.t+=sec; s.c.wayKills+=n; s.c.waySec+=sec; gain(s,Math.round(x),'xpWay'); } }
+ // ---------- flights the group takes on its own (autoFly) and flight masters it talks to in passing (autoFp) ----------
+ let TN=null, TNf=null, TNfac=null, FL=null, CK=0; const FT=new Map();
+ const tnodes=()=>{ const fac=typeof taxiFac==='function'?taxiFac():''; if(!TN||TNf!==taxiNodes||TNfac!==fac){ TNf=taxiNodes; TNfac=fac; TN=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id),zmin:n.zmin||0})).filter(n=>n.p); FT.clear(); } return TN; };
+ const flyT=(a,b)=>{ const k=a+'>'+b; let v=FT.get(k); if(v==null){ const fr=flightRoute(a,b); v=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(a),taxiPt(b))/PR.flySpeed)+PR.flyOver; FT.set(k,v); } return v; };
+ const wsec=(a,b,run)=>{ const same=cont(a)===cont(b); const d=hyp(a,b); if(same&&d<5) return 0; let sec; try{ sec=walkSecs(a,b,run,same?d:5000); }catch(e){ sec=null; } if(sec==null||!isFinite(sec)) sec=(same?d:5000)*1.25/run; return sec*PR.detour; };
+ function bestFlight(s,a,to,run,direct){ const K=tnodes().filter(n=>s.fps.has(n.id)&&n.zmin<=s.L); const near=(m,p,n)=>K.filter(x=>x.m===m).sort((x,y)=>hyp(x.p,p)-hyp(y.p,p)).slice(0,n);
+   let best=null; const ca=cont(a), cb=cont(to);
+   if(ca===cb){ for(const dp of near(ca,a,PR.flyNear)) for(const ds of near(cb,to,PR.flyNear)){ if(dp.id===ds.id) continue; const w1=wsec(a,dp.p,run), w2=wsec(ds.p,to,run); const c=w1+flyT(dp.id,ds.id)+w2; if(c<direct&&(!best||c<best.c)) best={c,legs:[[dp,ds]],w:w1+w2}; } return best; }
+   // another continent: optionally fly to a node on this side, walk (boats) across, optionally fly on the far side
+   const d0=near(ca,a,1)[0], d1=near(cb,to,1)[0]; const xs=[null,...K.filter(x=>x.m===ca&&d0&&x.id!==d0.id)], ys=[null,...K.filter(x=>x.m===cb&&d1&&x.id!==d1.id)];
+   const pre=x=>x?wsec(a,d0.p,run)+flyT(d0.id,x.id):0, post=y=>y?flyT(y.id,d1.id)+wsec(d1.p,to,run):0;
+   for(const x of xs) for(const y of ys){ if(!x&&!y) continue; const c=pre(x)+wsec(x?x.p:a,y?y.p:to,run)+post(y); if(c<direct&&(!best||c<best.c)){ const legs=[]; if(x) legs.push([d0,x]); if(y) legs.push([y,d1]); best={c,legs,x,y}; } }
+   return best; }
+ function learnNear(s,p){ if(!PR.autoFp||!p) return; for(const n of tnodes()){ if(s.fps.has(n.id)||n.m!==cont(p)||n.zmin>s.L) continue; const d=hyp(n.p,p); if(d>PR.autoFpYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoFp=(s.c.autoFp||0)+1; s.fps.add(n.id); if(FL) FL.push({k:CK,kind:'fp',node:n.id}); } }
+ function walkTo(s,a,to,run,sec){ s.t+=sec; s.c.walkSec+=sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
  function move(s,to){ if(!to) return; if(!s.pos){ s.pos=to; return; } const a=s.pos; const d=hyp(a,to); if(d<5&&cont(a)===cont(to)){ s.pos=to; return; }
-   const run=runSp(s); let sec; const same=cont(a)===cont(to); try{ sec=walkSecs(a,to,run,same?d:5000); }catch(e){ sec=null; } if(sec==null||!isFinite(sec)) sec=(same?d:5000)*1.25/run; sec*=PR.detour;
-   s.t+=sec; s.c.walkSec+=sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
+   if(typeof ROUTETIER==='function'&&ROUTETIER) ROUTETIER(s.L);
+   const run=runSp(s); const sec=wsec(a,to,run);
+   if(PR.autoFly&&sec>PR.flyMinSec){ const b=bestFlight(s,a,to,run,sec); if(b){ let cur=a;
+       if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,cur,dp.p,run,wsec(cur,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); learnNear(s,to); return; }
+       let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
+       const tgt=b.y?b.y.p:to; walkTo(s,p,tgt,run,wsec(p,tgt,run));
+       if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); }
+       learnNear(s,to); return; } }
+   walkTo(s,a,to,run,sec); learnNear(s,to); }
  const nearest=(pts,p)=>{ let b=null,bd=1e18; for(const x of pts){ if(x.dg) continue; const d=p?(cont(x)===cont(p)?hyp(x,p):1e7+hyp(x,p)):0; if(d<bd){bd=d;b=x;} } return b; };
  // ---------- killing at a ground: pulls of up to pullSize targets, walking a nearest-neighbour tour; respawns after a full sweep ----------
  function work(s,g,kills,onKill){ if(!g||!g.pts.length||kills<=0) return 0; const pts=g.pts; const start=s.pos&&cont(s.pos)===cont(g.center)?s.pos:g.center; move(s,nearest(pts,start)||g.center);
@@ -123,7 +146,7 @@ var SIMX=(function(){
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
-   for(let k=k0;k<steps.length;k++){ R.k=k; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
+   FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
    if(snaps) snaps[steps.length]=clone(s);
    return {t:s.t,tg:tAt,L:s.L,xp:s.xp,errs:s.errs,soft:R.soft,err:R.err,lvT,c:s.c,state:s,snaps}; }
  return {runRested,trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};

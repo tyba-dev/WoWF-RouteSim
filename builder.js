@@ -3,31 +3,45 @@
 // dungeons, a forced chain), flights, then large-neighbourhood search. Every candidate is timed by the engine,
 // resumed from the snapshot just before the first changed step. Runs inside the planner context (loaded by index.js).
 'use strict';
-// HC: block walking through dangerous zones, and their flight paths (shared with tools/postpass.js)
-var ROUTEBLOCK=function(names){ if(!names||!names.length||!NAV||ROUTEBLOCK.done) return; ROUTEBLOCK.done=1; const opt={block:names}; const ids=Object.entries(META.zones).filter(([z,Z])=>opt.block.includes(Z.n)).map(([z])=>+z);
-   for(const z of ids){ const a=zp2plane(z,0,0), b=zp2plane(z,100,100); const x0=Math.min(a.X,b.X),x1=Math.max(a.X,b.X),y0=Math.min(a.Y,b.Y),y1=Math.max(a.Y,b.Y);
-     const c0=Math.max(0,Math.floor((x0-NAV.x0)/NAV.cell)), c1=Math.min(NAV.w-1,Math.floor((x1-NAV.x0)/NAV.cell)), r0=Math.max(0,Math.floor((y0-NAV.y0)/NAV.cell)), r1=Math.min(NAV.h-1,Math.floor((y1-NAV.y0)/NAV.cell));
-     for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){ const i=r*NAV.w+c; if(!NAV.g[i]) continue; const q=plane2zone(NAV.x0+(c+.5)*NAV.cell,NAV.y0+(r+.5)*NAV.cell); const qz=q?(q.z!=null?q.z:q):null; if(+qz===z) NAV.g[i]=0; } }
-   PATHS.clear(); const bz=new Set(ids); const tn=taxiNodes; taxiNodes=(...a)=>tn(...a).filter(n=>{ const p=taxiPt(n.id); if(!p) return false; const q=plane2zone(p.X,p.Y); const qz=q?(q.z!=null?q.z:q):null; return !bz.has(+qz); }); };
+// HC: keep out of dangerous zones (walking and their flight paths). spec: [zone names] (always) or {zone name: level it opens at}.
+// ROUTETIER(L) switches the walking grid to the one for level L; path caches are kept per grid. Shared with tools/postpass.js.
+var ROUTEBLOCK=function(spec){ if(!spec||!NAV||ROUTEBLOCK.done) return; ROUTEBLOCK.done=1;
+ const by=Array.isArray(spec)?Object.fromEntries(spec.map(n=>[n,99])):spec; const zmin={}; for(const [z,Z] of Object.entries(META.zones)) if(by[Z.n]!=null) zmin[+z]=+by[Z.n];
+ const ids=Object.keys(zmin).map(Number); if(!ids.length) return; ROUTEBLOCK.zmin=zmin; ROUTEBLOCK.perm=new Set(ids.filter(z=>zmin[z]>=99));
+ const cells={}; for(const z of ids){ const a=zp2plane(z,0,0), b=zp2plane(z,100,100); const x0=Math.min(a.X,b.X),x1=Math.max(a.X,b.X),y0=Math.min(a.Y,b.Y),y1=Math.max(a.Y,b.Y);
+   const c0=Math.max(0,Math.floor((x0-NAV.x0)/NAV.cell)), c1=Math.min(NAV.w-1,Math.floor((x1-NAV.x0)/NAV.cell)), r0=Math.max(0,Math.floor((y0-NAV.y0)/NAV.cell)), r1=Math.min(NAV.h-1,Math.floor((y1-NAV.y0)/NAV.cell)); const l=cells[z]=[];
+   for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++){ const i=r*NAV.w+c; if(!NAV.g[i]) continue; const q=plane2zone(NAV.x0+(c+.5)*NAV.cell,NAV.y0+(r+.5)*NAV.cell); const qz=q?(q.z!=null?q.z:q):null; if(+qz===z) l.push(i); } }
+ const base=NAV.g; const grids=new Map(); const forL=[]; let tier='';
+ const gridFor=L=>{ if(forL[L]) return forL[L]; const bl=ids.filter(z=>zmin[z]>L).sort((a,b)=>a-b); const key=bl.join(','); let g=grids.get(key); if(!g){ g={key,g:base.slice()}; for(const z of bl) for(const i of cells[z]) g.g[i]=0; grids.set(key,g); } return forL[L]=g; };
+ const pg=PATHS.get.bind(PATHS), ps=PATHS.set.bind(PATHS), ph=PATHS.has.bind(PATHS); PATHS.clear();
+ PATHS.get=k=>pg(k+'#'+tier); PATHS.set=(k,v)=>ps(k+'#'+tier,v); PATHS.has=k=>ph(k+'#'+tier);
+ ROUTETIER=L=>{ const g=gridFor(Math.max(1,Math.min(60,L|0))); if(NAV.g!==g.g){ NAV.g=g.g; tier=g.key; } }; ROUTETIER(1);
+ ROUTEBLOCK.zoneMin=p=>{ if(!p) return 0; let z=p.z; if(z==null){ const q=plane2zone(p.X,p.Y); z=q&&(q.z!=null?q.z:q); } return zmin[+z]||0; };
+ const tn=taxiNodes; taxiNodes=(...a)=>tn(...a).filter(n=>{ const p=taxiPt(n.id); if(!p) return false; const m=ROUTEBLOCK.zoneMin(p); n.zmin=m; return m<99; }); };
+var ROUTETIER=null;
 var ROUTEBUILD=function(opt){
  const T0=Date.now(), MS=opt.ms||1800000, TGT=opt.tgt||40, K=opt.K||40, tol=opt.lvTol??1;
  const CH0=opt.char; const ch=Object.assign({},CH0);
  ROUTEBLOCK(opt.block);
  let steps=(opt.seed||[]).map(s=>Object.assign({},s));
- const cont=z=>META.zones[z]?.m; const HOMES=new Set(opt.conts||[0,1]); const BZ=new Set(Object.entries(META.zones).filter(([z,Z])=>(opt.block||[]).includes(Z.n)).map(([z])=>+z)); const okP=p=>p&&!p.dg&&HOMES.has(cont(p.z))&&!BZ.has(+p.z);
+ const cont=z=>META.zones[z]?.m; const HOMES=new Set(opt.conts||[0,1]); const BZ=ROUTEBLOCK.perm||new Set(); const zMin=p=>ROUTEBLOCK.zoneMin?ROUTEBLOCK.zoneMin(p):0; const okP=p=>p&&!p.dg&&HOMES.has(cont(p.z))&&!BZ.has(+p.z);
  const gray=L=>L<10?5:L<20?6:L<30?7:L<40?8:9; const need=totalXP(TGT,0);
  // ---- evaluation (incremental) ----
  let snaps=null, cur=null;
  const full=()=>{ const r=SIMX.run(steps,ch,{snaps:true,tgt:TGT}); snaps=r.snaps; cur=meas(r); return cur; };
  const meas=r=>({t:r.t,tg:r.tg,errs:r.errs,L:r.L,tot:totalXP(r.L,r.xp)});
  const evalFrom=(st,k)=>{ const from=snaps[Math.min(k,snaps.length-1)]; const r=SIMX.run(st,ch,{from:{k,state:from},tgt:TGT,stopAtTgt:true}); return meas(r); };
+ // horizon scoring: play the candidate only to H steps past its last change and compare with the current route at the same point
+ const H=opt.horizon||0; const stAt=k=>{ const x=snaps[Math.min(k,snaps.length-1)]; return {t:x.t,tg:null,errs:x.errs,L:x.L,tot:totalXP(x.L,x.xp)}; };
+ const evalH=(st,k0,kLast)=>{ const nIns=st.length-steps.length; const end=Math.min(st.length,kLast+nIns+H); if(!H||end>=st.length||(cur.tg!=null&&snaps.length&&end-nIns>=snaps.length-1)) { const m=evalFrom(st,k0); return {m,d:score(m)-score(cur)}; }
+   const r=SIMX.run(st.slice(0,end),ch,{from:{k:k0,state:snaps[Math.min(k0,snaps.length-1)]},tgt:TGT,stopAtTgt:true}); const m=meas(r); if(m.tg!=null){ const mf=evalFrom(st,k0); return {m:mf,d:score(mf)-score(cur)}; } return {m,d:score(m)-score(stAt(end-nIns))}; };
  let VK=4; const scoreV=(m,vk)=>m.tg?m.tg:m.t+(need-m.tot)/(vk*XP_TABLE[Math.min(59,m.L)])*3600; const score=m=>scoreV(m,VK);
  // ---- pool ----
  const pool=[]; for(const id of Object.keys(DB.q)){ const q=+id, x=Q(q); if(!x) continue; const e=EXTRA.quests[q]; if(!(e&&e.xp)&&!(QXP[q])) continue; const ql=(e&&e.l)||x.l||1; if(ql>(opt.maxQL||TGT+3)) continue; if((x.r||1)>TGT-1) continue; if(isDungeonQuest(q)) continue; if((opt.ban||[]).includes(q)||(opt.chain||[]).includes(q)) continue;
    const w=whyUnavailable(q,{level:60,turned:new Set(),log:new Map()},route); if(w&&w.hard) continue;
    const sp=starterPts(q).filter(okP), fp=finisherPts(q).filter(okP); if(!sp.length||!fp.length) continue;
    const ob=(objectives(q)||[]).filter(o=>!o.pre); if(ob.some(o=>!o.pts||!o.pts.length||o.pts.every(p=>!okP(p)))) continue;
-   pool.push({q,sp,fp,ob:ob.map(o=>o.pts.filter(okP)),r:x.r||1,ps:x.ps||[],pg:x.pg||[]}); }
+   const obp=ob.map(o=>o.pts.filter(okP)); const zr=Math.max(Math.min(...sp.map(zMin)),Math.min(...fp.map(zMin)),...obp.map(l=>Math.min(...l.map(zMin)))); pool.push({q,sp,fp,ob:obp,r:Math.max(x.r||1,zr),ps:x.ps||[],pg:x.pg||[]}); }
  // pack cells: centre = mean spawn of the cell
  const MC=+META.mobl.c; const CELLS=[]; { const by=new Map(); for(const [k,l] of spawnIdx().g) for(const m of l){ const kk=Math.floor(m.X/MC)+','+Math.floor(m.Y/MC); const c=by.get(kk)||by.set(kk,{X:0,Y:0,n:0,lv:[]}).get(kk); c.X+=m.X; c.Y+=m.Y; c.n++; c.lv.push(Math.round(m.lv)); }
    for(const [k,c] of by){ if(c.n<(opt.pkMin||8)) continue; const p={X:c.X/c.n,Y:c.Y/c.n}; const z=plane2zone(p.X,p.Y); if(!z) continue; p.z=z.z; if(!okP(p)) continue; CELLS.push({k,p,lv:c.lv,lo:Math.min(...c.lv),hi:Math.max(...c.lv),loc:{z:z.z,px:Math.round(z.px*10)/10,py:Math.round(z.py*10)/10}}); } }
@@ -41,13 +55,13 @@ var ROUTEBUILD=function(opt){
  const apply=pc=>{ const by=new Map(); for(const [k,st] of pc) (by.get(k)||by.set(k,[]).get(k)).push(...st.map(s=>Object.assign({},s,{id:uid(),b20:1}))); const out=[...(by.get(-1)||[])]; steps.forEach((s,k)=>{ out.push(s); const b=by.get(k); if(b) out.push(...b); }); return out; };
  const first=pc=>Math.min(...pc.map(x=>x[0]))+1;
  const runs=opt.runs||[]; const usedRun=new Set();
- const runPieces=(r,inR)=>{ const pieces=[]; for(const q of r.acc){ if(inR.has(q)) continue; const sp=starterPts(q).filter(p=>!p.dg); if(!sp.length) continue; pieces.push({p:sp[0],lv:Q(q).r||1,steps:[{t:'accept',q}]}); } const rp=zp2plane(r.loc.z,r.loc.px,r.loc.py); pieces.push({p:rp,lv:(r.lv||1)-tol,steps:r.steps}); for(const q of r.tin){ const fp=finisherPts(q).filter(p=>!p.dg); if(!fp.length) continue; pieces.push({p:near(fp,rp),lv:1,steps:[{t:'turnin',q}]}); } return pieces; };
+ const runPieces=(r,inR)=>{ const pieces=[]; for(const q of r.acc){ if(inR.has(q)) continue; const sp=starterPts(q).filter(p=>!p.dg); if(!sp.length) continue; pieces.push({p:sp[0],lv:Q(q).r||1,steps:[{t:'accept',q}]}); } const rp=zp2plane(r.loc.z,r.loc.px,r.loc.py); pieces.push({p:rp,lv:Math.max((r.lv||1)-tol,zMin(rp)),steps:r.steps}); for(const q of r.tin){ const fp=finisherPts(q).filter(p=>!p.dg); if(!fp.length) continue; pieces.push({p:near(fp,rp),lv:1,steps:[{t:'turnin',q}]}); } return pieces; };
  const CH=opt.chain||[]; const forced=[]; let ban=new Set(); let acc=0, rounds=0, flyAcc=0, nFail=0, nBund=0, evals=0; const log=[];
  const ptsNow=()=>{ const n=steps.length; const pts=new Array(n); for(let k=0;k<n;k++){ const sN=snaps[k+1]; pts[k]={p:sN&&sN.pos,L:sN?sN.L:1}; } for(let k=0;k<n;k++) if(!pts[k].p) pts[k].p=k?pts[k-1].p:null; return pts; };
  // flights: strip auto flights, learn flight paths passed within 200 yd, fly legs where it is quicker
  const tryFly=()=>{ const sv=steps; const svCur=cur; steps=steps.filter(x=>!x.auto); full(); const nodes=taxiNodes(); const fps=new Set(snaps[0].fps); const ins=[];
    steps.forEach((s,k)=>{ const a=snaps[k].pos, b=snaps[k+1].pos; if(s.t==='travel'&&s.kind==='fp'&&s.node) fps.add(s.node); if(!a||!b||cont(a)!==cont(b)) return; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<250) return;
-     for(const n of nodes){ if(fps.has(n.id)||n.m!==cont(a)) continue; const p=taxiPt(n.id); if(p&&segDist(p,a,b)<200){ ins.push([k,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id),auto:1}]); fps.add(n.id); } }
+     for(const n of nodes){ if(fps.has(n.id)||n.m!==cont(a)||(n.zmin||0)>snaps[k].L) continue; const p=taxiPt(n.id); if(p&&segDist(p,a,b)<200){ ins.push([k,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id),auto:1}]); fps.add(n.id); } }
      const dep=nearestNode(a,fps), arr=nearestNode(b,fps); if(!dep||!arr||dep===arr) return; const P=taxiPt(dep), Q2=taxiPt(arr); if(!P||!Q2) return; const run=runSpeed(snaps[k].L,3);
      const walk=d*1.25/run, fr=flightRoute(dep,arr); const fly=Math.hypot(P.X-a.X,P.Y-a.Y)*1.25/run+((fr&&fr.secs)||Math.hypot(Q2.X-P.X,Q2.Y-P.Y)/30)+20+Math.hypot(b.X-Q2.X,b.Y-Q2.Y)*1.25/run; if(fly<walk-30) ins.push([k,{t:'travel',kind:'fly',node:arr,text:taxiShort(arr),auto:1}]); });
    for(let i=ins.length-1;i>=0;i--){ const [k,st]=ins[i]; steps.splice(k,0,{id:uid(),...st}); } full(); if(cur.errs<=svCur.errs&&score(cur)<score(svCur)) flyAcc++; else { steps=sv; full(); } };
@@ -78,11 +92,11 @@ var ROUTEBUILD=function(opt){
    { const B=new Map(), BS=300; pts.forEach((x,k)=>{ if(!x.p) return; const kk=Math.floor(x.p.X/BS)+','+Math.floor(x.p.Y/BS); (B.get(kk)||B.set(kk,[]).get(kk)).push(k); });
      for(const c of CELLS){ if(usedCell.has(c.k)) continue; const bx=Math.floor(c.p.X/BS), by=Math.floor(c.p.Y/BS); let nearL=null; for(let i=-1;i<=1&&nearL==null;i++) for(let j=-1;j<=1;j++){ const l=B.get((bx+i)+','+(by+j)); if(l&&l.length){ nearL=pts[l[l.length-1]].L; break; } } if(nearL==null) continue;
        const okN=L=>c.lv.reduce((a,ml)=>a+(L-ml<gray(L)&&ml<=L+2?1:0),0); if(okN(Math.max(nearL,c.hi-2))<(opt.pkMin||8)) continue;
-       const b=build([{p:c.p,lv:Math.max(1,c.lo-2),steps:[{t:'grind',pack:1,loc:c.loc,note:'Clear this area once (AoE pulls)'}]}],pts); if(!b) continue; const L=(pts[b.pc[0][0]]||{L:1}).L; const N=okN(L); if(N<(opt.pkMin||8)) continue;
+       const b=build([{p:c.p,lv:Math.max(1,c.lo-2,zMin(c.p)),steps:[{t:'grind',pack:1,loc:c.loc,note:'Clear this area once (AoE pulls)'}]}],pts); if(!b) continue; const L=(pts[b.pc[0][0]]||{L:1}).L; const N=okN(L); if(N<(opt.pkMin||8)) continue;
        const xp=N*mobXP(L,L,false,3); const secs=N*5+b.cost*1.15/runSpeed(L,3); C.push({cell:c.k,b,xp,secs,v:xp/(secs+5)}); } }
    for(const r of runs){ if(usedRun.has(r.grp||r.dg)||ban.has('R'+r.dg+':'+r.acc.length)) continue; const b=build(runPieces(r,inR),pts); if(!b) continue; C.push({dg:r.dg,grp:r.grp,nq:r.acc.length,b,xp:r.xp||5000,secs:(r.mins||20)*60,v:1e9}); }
    C.sort((a,b)=>b.v-a.v); const top=C.slice(0,K); let best=null; const cs=score(cur);
-   for(const c of top){ const ns=apply(c.b.pc); let m; try{ m=evalFrom(ns,first(c.b.pc)); }catch(e){ if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); continue; } evals++; if(m.errs>cur.errs) continue; const sc=score(m); if(sc<cs-1&&(!best||sc<best.sc)) best={c,sc,ns}; }
+   for(const c of top){ const ns=apply(c.b.pc); let m, dd; try{ const e=evalH(ns,first(c.b.pc),Math.max(...c.b.pc.map(x=>x[0]))+1); m=e.m; dd=e.d; }catch(e){ if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); continue; } evals++; if(m.errs>cur.errs) continue; const sc=cs+dd; if(dd<-1&&(!best||sc<best.sc)) best={c,sc,ns}; }
    if(!best) break;
    const sv=steps, svCur=cur; steps=best.ns; full(); const c=best.c;
    if(cur.errs>svCur.errs||score(cur)>=cs){ steps=sv; full(); if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); else ban.add('R'+c.dg+':'+c.nq); nFail++; continue; }

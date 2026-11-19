@@ -2,7 +2,7 @@
 // Travel post-pass: adds flight-path pickups, flights and hearthstone use to a finished route, one change at a time,
 // keeping each only if the engine says the route reaches the target level sooner (and with no new errors).
 // usage: node tools/postpass.js <route.json> <out.json> [options.json]
-// options: {tgt, block:[zone names], params:{engine params}, minLeg:600, arr:3, passes:2, hearth:1, ms}
+// options: {tgt, block:[zone names] or {zone: level it opens at}, params:{engine params}, minLeg:600, arr:3, passes:2, hearth:1, ms}
 'use strict';
 const fs=require('fs'), path=require('path'), vm=require('vm');
 const [IN,OUT,OPTF]=process.argv.slice(2); const opt=OPTF?JSON.parse(fs.readFileSync(OPTF,'utf8')):{};
@@ -21,19 +21,19 @@ const tryIns=ins=>{ // ins: [[k, step]] inserted before step k
   return {m,st}; };
 const better=m=>m.errs<=cur.errs&&score(m)<score(cur)-5;
 const cont=p=>p&&META.zones[p.z]?.m; const hyp=(a,b)=>Math.hypot(a.X-b.X,a.Y-b.Y);
-const nodes=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id)})).filter(n=>n.p);
+const nodes=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id),zmin:n.zmin||0})).filter(n=>n.p);
 const posAt=k=>snaps[k]&&snaps[k].pos;
 const legs=()=>{ const L=[]; for(let k=1;k<steps.length;k++){ const a=posAt(k), b=posAt(k+1); if(!a||!b||cont(a)!==cont(b)) continue; const d=hyp(a,b); if(d>=(opt.minLeg||600)) L.push({k,a,b,d}); } return L.sort((x,y)=>y.d-x.d); };
-const bestLearn=(n,kmax)=>{ let best=null; for(let j=1;j<kmax;j++){ const a=posAt(j), b=posAt(j+1); if(!a||!b||cont(a)!==n.m) continue; const d=hyp(a,n.p)+hyp(n.p,b)-hyp(a,b); if(!best||d<best.d) best={j,d}; } return best; };
+const bestLearn=(n,kmax)=>{ let best=null; for(let j=1;j<kmax;j++){ const a=posAt(j), b=posAt(j+1); if(!a||!b||cont(a)!==n.m||snaps[j].L<n.zmin) continue; const d=hyp(a,n.p)+hyp(n.p,b)-hyp(a,b); if(!best||d<best.d) best={j,d}; } return best; };
 const stat={fly:0,learn:0,home:0,hs:0};
 full(); const start=cur;
 // ---- pick up every flight path the route passes close to (earliest pass); unused ones are dropped at the end ----
-if(opt.pickup!==0){ const ins=[]; for(const n of nodes){ if(snaps[1]&&snaps[1].fps.has(n.id)) continue; for(let j=1;j<steps.length;j++){ const a=posAt(j), b=posAt(j+1); if(!a||!b||cont(a)!==n.m) continue; const d=hyp(a,n.p)+hyp(n.p,b)-hyp(a,b); if(d<(opt.pickupYd||300)){ ins.push([j+1,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id)}]); break; } } }
+if(opt.pickup!==0){ const ins=[]; for(const n of nodes){ if(snaps[1]&&snaps[1].fps.has(n.id)) continue; for(let j=1;j<steps.length;j++){ const a=posAt(j), b=posAt(j+1); if(!a||!b||cont(a)!==n.m||snaps[j].L<n.zmin) continue; const d=hyp(a,n.p)+hyp(n.p,b)-hyp(a,b); if(d<(opt.pickupYd||300)){ ins.push([j+1,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id)}]); break; } } }
   if(ins.length){ const r=tryIns(ins); if(r.m.errs<=cur.errs){ steps=r.st; full(); stat.learn+=ins.length; log({pickups:ins.length,tg:Math.round(cur.tg/60)}); } } }
 // ---- flights ----
 for(let pass=0;pass<(opt.passes||2);pass++){ let accd=0;
   for(const lg of legs()){ if(Date.now()-T0>MS) break; const {a,b}=posAt(lg.k)&&{a:posAt(lg.k),b:posAt(lg.k+1)}; if(!a||!b) continue;
-    const cands=nodes.filter(n=>n.m===cont(b)&&hyp(n.p,b)<hyp(a,b)*0.6).sort((x,y)=>hyp(x.p,b)-hyp(y.p,b)).slice(0,opt.arr||3);
+    const cands=nodes.filter(n=>n.m===cont(b)&&n.zmin<=snaps[lg.k].L&&hyp(n.p,b)<hyp(a,b)*0.6).sort((x,y)=>hyp(x.p,b)-hyp(y.p,b)).slice(0,opt.arr||3);
     let best=null;
     for(const n of cands){ const known=snaps[lg.k].fps.has(n.id); const ins=[[lg.k,{t:'travel',kind:'fly',node:n.id,text:taxiShort(n.id)}]];
       if(!known){ const bl=bestLearn(n,lg.k); if(!bl) continue; ins.push([bl.j+1,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id)}]); }
