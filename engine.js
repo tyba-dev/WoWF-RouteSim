@@ -11,7 +11,7 @@ var SIMX=(function(){
  let TR=null; let CUR={};
  const DEF={ talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
-   detour:1.0, party:3, dropKeep:0.5, splitObjects:1 };
+   detour:1.0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1 };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
  const hyp=(a,b)=>Math.hypot(a.X-b.X,a.Y-b.Y);
@@ -42,19 +42,24 @@ var SIMX=(function(){
  function groundFor(q,line,type,ids,pos,need){ // returns {pts:[{X,Y,z,id,lv,p}], center}
    const key=q+'|'+line+'|'+type+ids.map(x=>x.id).join(',')+'|'+(pos?Math.round(pos.X/200)+','+Math.round(pos.Y/200):'')+'|'+Math.ceil(Math.log2(1+(need||1))); if(GC.has(key)) return GC.get(key);
    const all=[]; for(const s of ids) for(const p of entPts(s.t,s.id)){ if(p.dg) continue; all.push({X:p.X,Y:p.Y,z:p.z,id:s.id,t:s.t,p:s.p,lv:s.t==='n'?nLv(s.id):null}); }
-   let g=null; if(all.length){ const sp=EXTRA.spots[q]&&EXTRA.spots[q][line]; let center=null;
-     if(sp&&sp.at&&sp.at.length){ let best=null,bd=1e18; for(const a of sp.at){ const z=uiZone.get(a.ui); if(z==null) continue; const c=zp2plane(z,a.x,a.y); if(!c) continue; const d=pos&&cont(c)===cont(pos)?hyp(c,pos):0; if(d<bd){bd=d;best={c,r:a.r};} } if(best){ const R=Math.max(100,best.r*1.5); const inR=all.filter(p=>cont(p)===cont(best.c)&&hyp(p,best.c)<=R); if(inR.length) g={pts:inR,center:best.c,rec:1}; } }
-     if(!g){ const pool=pos?all.filter(p=>cont(p)===cont(pos)):all; const src=pool.length?pool:all; let best=null,bs=1e18; const lim=src.length>400?Math.ceil(src.length/400):1;
-       for(let i=0;i<src.length;i+=lim){ const c=src[i]; let nb=0; for(const p of src) if(hyp(p,c)<=PR.groundR) nb++; const d=pos&&cont(c)===cont(pos)?hyp(pos,c):5000; const sc=d+4000/(1+nb); if(sc<bs){bs=sc;best=c;} }
-       g={pts:src.filter(p=>hyp(p,best)<=PR.groundR),center:best}; }
-     // too few spawns for the work: widen the ground (walk further rather than wait on respawns), up to groundMax
-     if(g&&need){ let R=PR.groundR; const src=all.filter(p=>cont(p)===cont(g.center)); while(g.pts.length<need*PR.groundFill&&R<PR.groundMax){ R*=1.5; g={pts:src.filter(p=>hyp(p,g.center)<=R),center:g.center,rec:g.rec}; } } }
+   let g=null; if(all.length){ const N=Math.max(1,need||1); const run=7;
+     // candidate centres: players' recorded spot(s), plus the densest spawns
+     const C=[]; const sp=EXTRA.spots[q]&&EXTRA.spots[q][line];
+     if(sp&&sp.at) for(const a of sp.at){ const z=uiZone.get(a.ui); if(z==null) continue; const c=zp2plane(z,a.x,a.y); if(c) C.push({c,rec:1}); }
+     const pool=pos?all.filter(p=>cont(p)===cont(pos)):all; const src=pool.length?pool:all; const lim=src.length>300?Math.ceil(src.length/300):1;
+     const dens=[]; for(let i=0;i<src.length;i+=lim){ const c=src[i]; let nb=0; for(const p of src) if(hyp(p,c)<=PR.groundR) nb++; dens.push([nb,c]); } dens.sort((a,b)=>b[0]-a[0]); for(const [nb,c] of dens.slice(0,6)) C.push({c}); if(pos){ let nn=null,nd=1e18; for(const p of src){ const d=hyp(p,pos); if(d<nd){nd=d;nn=p;} } if(nn) C.push({c:nn}); }
+     // each centre: widen until there are enough spawns (or groundMax); price walk there + the sweep + respawn waits; keep the cheapest
+     let best=null;
+     for(const cc of C){ const inC=all.filter(p=>cont(p)===cont(cc.c)); let R=PR.groundR, pts=inC.filter(p=>hyp(p,cc.c)<=R); while(pts.length<N*PR.groundFill&&R<PR.groundMax){ R*=1.5; pts=inC.filter(p=>hyp(p,cc.c)<=R); } if(!pts.length) continue;
+       const m=pts.length; const gap=Math.min(R,R*1.77/Math.sqrt(m)); const sweep=Math.min(N,m)*gap/run; const wait=N>m?(N-m)/m*Math.min(PR.respawnMax,PR.respawn):0; const go=pos?(cont(pos)===cont(cc.c)?hyp(pos,cc.c):6000)/run:0;
+       const cost=go+sweep+wait-(cc.rec?30:0); if(!best||cost<best.cost) best={cost,g:{pts,center:cc.c,rec:cc.rec,R}}; }
+     g=best?best.g:null; }
    GC.set(key,g); if(GC.size>50000) GC.clear(); return g; }
  // ---------- the state ----------
  function newState(ch){ return {t:0,L:+ch.level||1,xp:+ch.xp||0,party:Math.max(1,+(ch.party||PR.party)),pos:null,log:new Map(),done:new Set(ch.doneQs||[]),fps:new Set([...(ch.fps||[]),...raceFps(ch.race)]),hsReady:0,bind:null,errs:0,
-   c:{walkSec:0,walkYd:0,flySec:0,rideSec:0,talks:0,interacts:0,kills:0,pulls:0,killSec:0,pullSec:0,restSec:0,waitSec:0,wayKills:0,waySec:0,levelUps:0,fixedSec:0,runSec:0,xpQuest:0,xpKill:0,xpWay:0,xpRun:0}}; }
- function clone(s){ const log=new Map(); for(const [q,ns] of s.log) log.set(q,ns.map(n=>Object.assign({},n))); return {t:s.t,L:s.L,xp:s.xp,party:s.party,pos:s.pos,log,done:new Set(s.done),fps:new Set(s.fps),hsReady:s.hsReady,bind:s.bind,errs:s.errs,c:Object.assign({},s.c)}; }
- function gain(s,x,kind){ if(x<=0||s.L>=60) return; s.c[kind]+=x; s.xp+=x; while(s.L<60&&s.xp>=XP_TABLE[s.L]){ s.xp-=XP_TABLE[s.L]; s.L++; s.c.levelUps++; s.t+=PR.levelUp; } if(s.L>=60){ s.L=60; s.xp=0; } }
+   c:{walkSec:0,walkYd:0,flySec:0,rideSec:0,talks:0,interacts:0,kills:0,pulls:0,killSec:0,pullSec:0,restSec:0,waitSec:0,wayKills:0,waySec:0,levelUps:0,fixedSec:0,runSec:0,xpQuest:0,xpKill:0,xpWay:0,xpRun:0,xpRest:0,tents:0,tentSec:0},rp:0,tentAt:null}; }
+ function clone(s){ const log=new Map(); for(const [q,ns] of s.log) log.set(q,ns.map(n=>Object.assign({},n))); return {t:s.t,L:s.L,xp:s.xp,party:s.party,pos:s.pos,log,done:new Set(s.done),fps:new Set(s.fps),hsReady:s.hsReady,bind:s.bind,errs:s.errs,c:Object.assign({},s.c),rp:s.rp,tentAt:s.tentAt}; }
+ function gain(s,x,kind){ if(x<=0||s.L>=60) return; if(s.rp>0&&(kind==='xpKill'||kind==='xpWay')){ const b=Math.min(s.rp,x); s.rp-=b; s.c.xpRest+=b; x+=b; } s.c[kind]+=x; s.xp+=x; while(s.L<60&&s.xp>=XP_TABLE[s.L]){ s.xp-=XP_TABLE[s.L]; s.L++; s.c.levelUps++; s.t+=PR.levelUp; } if(s.L>=60){ s.L=60; s.xp=0; } }
  const runSp=s=>runSpeed(s.L,s.party);
  // ---------- moving ----------
  function wayKill(s,a,b){ if(!PR.wayKills||s.L>=PR.mountLevel||cont(a)!==cont(b)) return; const d=hyp(a,b); if(d<30||d>6000) return; { const tt=tramSecs(a,b,7); if(tt!=null&&tt<d*1.25/7) return; }
@@ -80,7 +85,7 @@ var SIMX=(function(){
  function doNeed(s,q,line,n){ if(n.rem<=0) return; CUR={q,k:n.k,item:n.item,pr:null};
    if(n.k==='kill'){ const g=groundFor(q,line,'n',n.ids.map(id=>({t:'n',id})),s.pos,n.rem); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; }
      work(s,g,n.rem,p=>{ pool(s,q,p); return 1; }); n.rem=0; return; }
-   if(n.k==='item'){ let src=dropSources(n.item); { const kn=src.filter(x=>x.p!=null); if(kn.length){ const mx=Math.max(...kn.map(x=>x.p)); src=kn.filter(x=>x.p>=mx*PR.dropKeep); } } /* hunt the mobs that drop it best */ if(!src.length){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; } let pr0=0,np0=0; for(const x of src){ pr0+=x.p!=null?x.p:PR.dropDefault; np0++; } const g=groundFor(q,line,'i',src,s.pos,Math.ceil(n.rem/Math.max(0.01,np0?pr0/np0:PR.dropDefault))); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; }
+   if(n.k==='item'){ let src=dropSources(n.item); if(src.filter(x=>x.t==='n').length>PR.bagSources){ n.rem=0; return; } /* carried from earlier kills (cloth for donations): no trip, as Polestar */ { const kn=src.filter(x=>x.p!=null); if(kn.length){ const mx=Math.max(...kn.map(x=>x.p)); src=kn.filter(x=>x.p>=mx*PR.dropKeep); } } /* hunt the mobs that drop it best */ if(!src.length){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; } let pr0=0,np0=0; for(const x of src){ pr0+=x.p!=null?x.p:PR.dropDefault; np0++; } const g=groundFor(q,line,'i',src,s.pos,Math.ceil(n.rem/Math.max(0.01,np0?pr0/np0:PR.dropDefault))); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; }
      // expected kills: items needed over the ground's mean drop chance
      let pp=0,np=0; for(const p of g.pts){ pp+=p.p!=null?p.p:PR.dropDefault; np++; } const pr=Math.max(0.01,np?pp/np:PR.dropDefault); let acc=0; CUR.pr=pr; CUR.rem=n.rem;
      work(s,g,Math.ceil(n.rem/pr),p=>{ pool(s,q,p); acc+=pr; return 1; }); n.rem=0; return; }
@@ -114,10 +119,12 @@ var SIMX=(function(){
    }
    if(err){ s.errs++; R.err&&R.err.push([R.k,st.t,st.q||st.kind,err]); } }
  // ---------- public: play a whole route or resume from a snapshot ----------
+ function runRested(steps,ch,opt={}){ const RS=opt.rested||ch.rested; if(!RS||!RS.on) return run(steps,ch,opt); let r=run(steps,ch,Object.assign({},opt,{rested:null})); for(let i=0;i<4;i++){ const T=(opt.tgt&&r.tg)||r.t; const st=Math.max(0,T-(RS.hours||50)*3600); const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st})); const d=Math.abs(((opt.tgt&&r2.tg)||r2.t)-T); r=r2; if(d<30) break; } return r; }
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
-   for(let k=k0;k<steps.length;k++){ R.k=k; if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
+   const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
+   for(let k=k0;k<steps.length;k++){ R.k=k; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
    if(snaps) snaps[steps.length]=clone(s);
    return {t:s.t,tg:tAt,L:s.L,xp:s.xp,errs:s.errs,soft:R.soft,err:R.err,lvT,c:s.c,state:s,snaps}; }
- return {trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};
+ return {runRested,trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};
 })();
