@@ -28,13 +28,14 @@ var ROUTEBUILD=function(opt){
  const gray=L=>L<10?5:L<20?6:L<30?7:L<40?8:9; const need=totalXP(TGT,0);
  // ---- evaluation (incremental) ----
  let snaps=null, cur=null;
- const full=()=>{ const r=SIMX.run(steps,ch,{snaps:true,tgt:TGT}); snaps=r.snaps; cur=meas(r); return cur; };
+ let RO={}; const ro=o=>Object.assign(o,RO); const setRest=()=>{ const RS=ch.rested; if(!opt.tents||!RS||!RS.on){ RO={}; return; } let T=null; for(let i=0;i<3;i++){ const r=SIMX.run(steps,ch,Object.assign({tgt:TGT},T==null?{}:{rested:RS,restStart:Math.max(0,T-(RS.hours||50)*3600)})); const T2=r.tg||r.t; if(T!=null&&Math.abs(T2-T)<60){ T=T2; break; } T=T2; } RO={rested:RS,restStart:Math.max(0,T-(RS.hours||50)*3600)}; };
+ const full=()=>{ const r=SIMX.run(steps,ch,ro({snaps:true,tgt:TGT})); snaps=r.snaps; cur=meas(r); return cur; };
  const meas=r=>({t:r.t,tg:r.tg,errs:r.errs,L:r.L,tot:totalXP(r.L,r.xp)});
- const evalFrom=(st,k)=>{ const from=snaps[Math.min(k,snaps.length-1)]; const r=SIMX.run(st,ch,{from:{k,state:from},tgt:TGT,stopAtTgt:true}); return meas(r); };
+ const evalFrom=(st,k)=>{ const from=snaps[Math.min(k,snaps.length-1)]; const r=SIMX.run(st,ch,ro({from:{k,state:from},tgt:TGT,stopAtTgt:true})); return meas(r); };
  // horizon scoring: play the candidate only to H steps past its last change and compare with the current route at the same point
  const H=opt.horizon||0; const stAt=k=>{ const x=snaps[Math.min(k,snaps.length-1)]; return {t:x.t,tg:null,errs:x.errs,L:x.L,tot:totalXP(x.L,x.xp)}; };
  const evalH=(st,k0,kLast)=>{ const nIns=st.length-steps.length; const end=Math.min(st.length,kLast+nIns+H); if(!H||end>=st.length||(cur.tg!=null&&snaps.length&&end-nIns>=snaps.length-1)) { const m=evalFrom(st,k0); return {m,d:score(m)-score(cur)}; }
-   const r=SIMX.run(st.slice(0,end),ch,{from:{k:k0,state:snaps[Math.min(k0,snaps.length-1)]},tgt:TGT,stopAtTgt:true}); const m=meas(r); if(m.tg!=null){ const mf=evalFrom(st,k0); return {m:mf,d:score(mf)-score(cur)}; } return {m,d:score(m)-score(stAt(end-nIns))}; };
+   const r=SIMX.run(st.slice(0,end),ch,ro({from:{k:k0,state:snaps[Math.min(k0,snaps.length-1)]},tgt:TGT,stopAtTgt:true})); const m=meas(r); if(m.tg!=null){ const mf=evalFrom(st,k0); return {m:mf,d:score(mf)-score(cur)}; } return {m,d:score(m)-score(stAt(end-nIns))}; };
  let VK=4; const scoreV=(m,vk)=>m.tg?m.tg:m.t+(need-m.tot)/(vk*XP_TABLE[Math.min(59,m.L)])*3600; const score=m=>scoreV(m,VK);
  // ---- pool ----
  const pool=[]; for(const id of Object.keys(DB.q)){ const q=+id, x=Q(q); if(!x) continue; const e=EXTRA.quests[q]; if(!(e&&e.xp)&&!(QXP[q])) continue; const ql=(e&&e.l)||x.l||1; if(ql>(opt.maxQL||TGT+3)) continue; if((x.r||1)>TGT-1) continue; if(isDungeonQuest(q)) continue; if((opt.ban||[]).includes(q)||(opt.chain||[]).includes(q)) continue; if(opt.banRe&&new RegExp(opt.banRe,'i').test(x.n||'')) continue;
@@ -105,7 +106,7 @@ var ROUTEBUILD=function(opt){
    if(opt.fly&&acc%(opt.flyEvery||4)===0) tryFly();
    if(acc%25===0&&opt.progress) opt.progress({acc,rounds,evals,L:cur.L,t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,secs:Math.round((Date.now()-T0)/1000)});
    log.push([vk,c.q||c.dg||(c.hub?'hub'+c.qs.length:'pk'),Math.round(cur.t/60),cur.L,cur.tg?Math.round(cur.tg/60):null]); } } };
- full();
+ setRest(); full();
  const vks=opt.vks||[4,3,2.5,2,1.6,1.3,1,0.8,0.65,0.5,0.4,0.3,0.22,0.15,0.1,0.07,0.05,0.035,0.025,0.015];
  if(!opt.skipGrow) grow(vks,T0+(opt.growMs||MS));
  if(opt.fly) tryFly(); full(); const built={t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L};
@@ -121,7 +122,7 @@ var ROUTEBUILD=function(opt){
      const ns=steps.filter(s=>!hit(s)); let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
      if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ steps=ns; full(); nAcc++; pruned.push([key,Math.round(cur.tg/60)]); if(isQ) ban.add(+id); } }
    if(opt.progress) opt.progress({prune:pass,acc:nAcc,tg:Math.round(cur.tg/60)}); if(!nAcc) break;
-   grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
+   grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); setRest(); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
    const n=steps.length; const W=Math.min(n-2,(opt.lnsW||80)+Math.floor(rnd()*(opt.lnsW||80))); const a=FZ+Math.floor(rnd()*Math.max(1,n-W-FZ)); const qs=new Set(), cells=new Set();
    for(let k=a;k<a+W;k++){ const s=steps[k]; if(prot(s)) continue; if(s.q&&!CH.includes(s.q)) qs.add(s.q); if(s.pack&&s.loc){ const p=zp2plane(s.loc.z,s.loc.px,s.loc.py); cells.add(Math.floor(p.X/MC)+','+Math.floor(p.Y/MC)); } }
