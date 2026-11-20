@@ -123,7 +123,20 @@ var ROUTEBUILD=function(opt){
    for(const [key] of cand){ if(Date.now()>deadline-60000) break; const isQ=key[0]==='q', id=key.slice(1); const hit=s=>!prot(s)&&!s.auto&&(isQ?String(s.q)===id:s.id===id); const k0=steps.findIndex(hit); if(k0<0) continue;
      const ns=steps.filter(s=>!hit(s)); let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
      if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(); steps=ns; full(); if(runLow()>v0){ steps=svS; full(); continue; } nAcc++; pruned.push([key,Math.round(cur.tg/60)]); if(isQ) ban.add(+id); } }
-   if(opt.progress) opt.progress({prune:pass,acc:nAcc,tg:Math.round(cur.tg/60)}); if(!nAcc) break;
+   if(opt.progress) opt.progress({prune:pass,acc:nAcc,tg:Math.round(cur.tg/60)});
+   // relocate: take a quest out and put it back where it costs least (cheapest detour), keep it if the target comes sooner
+   if(opt.relocate&&cur.tg!=null){ let nRel=0; const PQ=new Map(pool.map(c=>[c.q,c])); const qs=[...new Set(steps.filter(s=>s.q&&!prot(s)&&!s.auto&&!CH.includes(s.q)&&!need2.has(s.q)&&PQ.has(s.q)).map(s=>s.q))];
+     for(const q of qs){ if(Date.now()>deadline-60000) break; const c=PQ.get(q); const rem=new Set(); steps.forEach((s,k)=>{ if(s.q===q&&!prot(s)&&!s.auto) rem.add(k); }); if(!rem.size) continue; const kr=Math.min(...rem);
+       const pts=ptsNow().filter((_,k)=>!rem.has(k)); const ns=steps.filter((_,k)=>!rem.has(k)); const tiAt=new Map(); ns.forEach((s,k)=>{ if(s.t==='turnin') tiAt.set(s.q,k); });
+       let lo=-1, bad=false; for(const p of [...c.ps,...c.pg]){ const k=tiAt.get(p); if(k==null){ if(c.pg.includes(p)) bad=true; continue; } lo=Math.max(lo,k); } if(bad) continue;
+       let s0=c.sp[0],bd=1e18; for(const x of c.sp) for(let i=0;i<pts.length;i+=3){ if(!pts[i].p||pts[i].L<c.r) continue; const d=D(x,pts[i].p); if(d<bd){bd=d;s0=x;} }
+       let cp=s0; const op=[]; for(const o of c.ob){ const x=near(o,cp); op.push(x); cp=x; } const f=near(c.fp,cp);
+       const pieces=[{p:s0,lv:c.r,steps:[{t:'accept',q}]}]; if(c.ob.length) pieces.push({p:op[op.length-1],lv:c.r,steps:[{t:'complete',q}]}); pieces.push({p:f,lv:c.r,steps:[{t:'turnin',q}]});
+       const b=build(pieces,pts,lo); if(!b) continue; const svS=steps; steps=ns; const ns2=apply(b.pc); steps=svS; const k0=Math.min(kr,first(b.pc));
+       let m; try{ m=evalFrom(ns2,k0); }catch(e){ continue; } evals++;
+       if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const v0=runLow(); steps=ns2; full(); if(cur.errs>m.errs||runLow()>v0||cur.tg==null){ steps=svS; full(); continue; } nRel++; nAcc++; } }
+     if(opt.progress) opt.progress({relocate:pass,acc:nRel,tg:Math.round(cur.tg/60)}); }
+   if(!nAcc) break;
    grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); setRest(); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
    const n=steps.length; const W=Math.min(n-2,(opt.lnsW||80)+Math.floor(rnd()*(opt.lnsW||80))); const a=FZ+Math.floor(rnd()*Math.max(1,n-W-FZ)); const qs=new Set(), cells=new Set();
