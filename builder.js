@@ -56,7 +56,7 @@ var ROUTEBUILD=function(opt){
  const build=(c,pts,lo0)=>{ const pc=[]; let lo=(lo0==null?-1:lo0), cost=0; for(const pz of c){ const b=insPos(pts,pz.lv,lo,pz.p); if(!b) return null; pc.push([b.k,pz.steps]); lo=b.k; cost+=b.d; } return {pc,cost}; };
  const apply=pc=>{ const by=new Map(); for(const [k,st] of pc) (by.get(k)||by.set(k,[]).get(k)).push(...st.map(s=>Object.assign({},s,{id:uid(),b20:1}))); const out=[...(by.get(-1)||[])]; steps.forEach((s,k)=>{ out.push(s); const b=by.get(k); if(b) out.push(...b); }); return out; };
  const first=pc=>Math.min(...pc.map(x=>x[0]))+1;
- const runs=opt.runs||[]; const usedRun=new Set(); for(const st of (opt.seed||[])) if(st.mode==='run'&&st.dg){ usedRun.add(st.dg); for(const r of runs) if(r.dg===st.dg&&r.grp) usedRun.add(r.grp); }
+ const runs=opt.runs||[]; const usedRun=new Set(); for(const st of (opt.seed||[])) if(st.mode==='run'&&st.dg){ usedRun.add(st.dg); for(const r of runs) if(r.dg===st.dg&&r.grp) usedRun.add(r.grp); } { const cn=new Set((opt.seed||[]).filter(st=>st.t==='custom'&&st.name).map(st=>st.name)); for(const r of runs) if((r.steps||[]).some(st=>st.t==='custom'&&cn.has(st.name))) usedRun.add(r.grp||r.dg); }
  const runPieces=(r,inR)=>{ const pieces=[]; for(const q of r.acc){ if(inR.has(q)) continue; const sp=starterPts(q).filter(p=>!p.dg); if(!sp.length) continue; pieces.push({p:sp[0],lv:Q(q).r||1,steps:[{t:'accept',q}]}); } const rp=zp2plane(r.loc.z,r.loc.px,r.loc.py); pieces.push({p:rp,lv:Math.max((r.lv||1)-tol,zMin(rp)),steps:r.steps}); for(const q of r.tin){ const fp=finisherPts(q).filter(p=>!p.dg); if(!fp.length) continue; pieces.push({p:near(fp,rp),lv:1,steps:[{t:'turnin',q}]}); } return pieces; };
  const CH=opt.chain||[]; const forced=[]; let ban=new Set(); let acc=0, rounds=0, flyAcc=0, nFail=0, nBund=0, evals=0; const log=[];
  const ptsNow=()=>{ const n=steps.length; const pts=new Array(n); for(let k=0;k<n;k++){ const sN=snaps[k+1]; pts[k]={p:sN&&sN.pos,L:sN?sN.L:1}; } for(let k=0;k<n;k++) if(!pts[k].p) pts[k].p=k?pts[k-1].p:null; return pts; };
@@ -113,6 +113,8 @@ var ROUTEBUILD=function(opt){
  // ---- large-neighbourhood search: rip out a stretch, regrow it, keep it if the target comes sooner ----
  const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
  const deadline=T0+MS; let it=0; let seed=opt.seedRng||12345; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
+ const RLV=new Map(); for(const r of runs){ if(r.dg) RLV.set('d:'+r.dg,r.lv||1); for(const st of (r.steps||[])) if(st.t==='custom'&&st.name) RLV.set('c:'+st.name,r.lv||1); }
+ const runLow=()=>{ let n=0; steps.forEach((s,k)=>{ const key=s.mode==='run'&&s.dg?'d:'+s.dg:s.t==='custom'&&s.act==='accept'?'c:'+s.name:null; const lv=key&&RLV.get(key); if(lv&&snaps[k]&&snaps[k].L<lv-tol) n+=lv-tol-snaps[k].L; }); return n; };
  // ---- prune: drop quests and camp clears whose removal brings the target sooner (their time is worth more than their XP), then regrow ----
  const pruned=[]; for(let pass=0;pass<(opt.prune||0)&&cur.tg!=null&&Date.now()<deadline-60000;pass++){ let nAcc=0;
    const need2=new Set(); for(const s of steps){ const x=s.q&&Q(s.q); for(const p of [...(x?.ps||[]),...(x?.pg||[])]) need2.add(p); }
@@ -120,7 +122,7 @@ var ROUTEBUILD=function(opt){
    const cand=[...cost.entries()].filter(([,o])=>snaps[o.k0]&&snaps[o.k0].t<cur.tg).sort((x,y)=>y[1].dt/(y[1].dx+500)-x[1].dt/(x[1].dx+500)).slice(0,opt.pruneN||400);
    for(const [key] of cand){ if(Date.now()>deadline-60000) break; const isQ=key[0]==='q', id=key.slice(1); const hit=s=>!prot(s)&&!s.auto&&(isQ?String(s.q)===id:s.id===id); const k0=steps.findIndex(hit); if(k0<0) continue;
      const ns=steps.filter(s=>!hit(s)); let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
-     if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ steps=ns; full(); nAcc++; pruned.push([key,Math.round(cur.tg/60)]); if(isQ) ban.add(+id); } }
+     if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(); steps=ns; full(); if(runLow()>v0){ steps=svS; full(); continue; } nAcc++; pruned.push([key,Math.round(cur.tg/60)]); if(isQ) ban.add(+id); } }
    if(opt.progress) opt.progress({prune:pass,acc:nAcc,tg:Math.round(cur.tg/60)}); if(!nAcc) break;
    grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); setRest(); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);

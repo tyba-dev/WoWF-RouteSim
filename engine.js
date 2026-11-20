@@ -138,7 +138,7 @@ var SIMX=(function(){
       s.log.delete(q); s.done.add(q); gain(s,st.xpo!=null&&R.useXpo?+st.xpo:questXP(q,s.L),'xpQuest'); break; }
     case 'grind':{ if(st.mode==='run'){ const p=stepPt(s,st); if(p) move(s,p); const sec=(+st.mins||0)*60; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,s.L,s.party)*mobXP(s.L,s.L,false,s.party)*DG_RUN_XP); gain(s,x,'xpRun'); break; }
       if(st.pack&&st.loc){ const c=stepPt(s,st); const C=+META.mobl.c; const cx=Math.floor(c.X/C), cy=Math.floor(c.Y/C); const ms=spawnsIn(cx*C,(cx+1)*C,cy*C,(cy+1)*C).filter(m=>fightable(s.L,Math.round(m.lv))).map(m=>({X:m.X,Y:m.Y,z:c.z,id:m.id,t:'n',lv:m.lv})); if(ms.length) work(s,{pts:ms,center:c},ms.length,()=>1); break; }
-      if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; const p=stepPt(s,st); if(p) move(s,p); const xps=mobXP(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
+      if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; if(st.extra&&st.note){ const key='g:'+st.note; if(s.done.has(key)) break; s.done.add(key); } const p=stepPt(s,st); if(p) move(s,p); const xps=mobXP(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
       if(+st.amount>0&&+st.xph>0){ const p=stepPt(s,st); if(p) move(s,p); const sec=+st.amount/(+st.xph)*3600; s.t+=sec; s.c.fixedSec+=sec; gain(s,+st.amount,'xpKill'); } break; }
     case 'travel':{ const k=st.kind;
       if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=st.from&&s.fps.has(st.from)&&META.taxi.nodes[st.from]&&META.taxi.nodes[st.from].m===cont(s.pos)?st.from:nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
@@ -146,7 +146,7 @@ var SIMX=(function(){
       if(k==='fp'){ const id=st.node||resolveNode(st); const p=id&&taxiPt(id); if(p){ move(s,p); s.fps.add(id); s.t+=PR.talk; s.c.talks++; } break; }
       if(k==='hs'||k==='home'){ if(k==='home'){ s.bind=s.pos; s.t+=PR.talk; break; } if(s.bind&&s.t>=s.hsReady){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.pos=s.bind; s.hsReady=s.t+PR.hearthCd; } else err='hearth not ready'; break; }
       const p=stepPt(s,st); if(p) move(s,p); break; }
-    case 'custom':{ const p=stepPt(s,st); if(p) move(s,p); if(st.act==='accept'||st.act==='turnin'){ s.t+=PR.talk; s.c.talks++; } if(st.act==='turnin'&&+st.xp>0) gain(s,+st.xp,'xpQuest'); break; }
+    case 'custom':{ const p=stepPt(s,st); if(p) move(s,p); if(st.act==='accept'||st.act==='turnin'){ s.t+=PR.talk; s.c.talks++; } if(st.act==='turnin'&&+st.xp>0){ const key='c:'+(st.name||st.id); if(!s.done.has(key)){ s.done.add(key); gain(s,+st.xp,'xpQuest'); } } break; }
     default:{ const p=stepPt(s,st); if(p) move(s,p); }
    }
    if(err){ s.errs++; R.err&&R.err.push([R.k,st.t,st.q||st.kind,err]); } }
