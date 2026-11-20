@@ -68,7 +68,7 @@ var SIMX=(function(){
    for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mobXP(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); }
    if(n){ s.t+=sec; s.c.wayKills+=n; s.c.waySec+=sec; gain(s,Math.round(x),'xpWay'); } }
  // ---------- flights the group takes on its own (autoFly) and flight masters it talks to in passing (autoFp) ----------
- let TN=null, TNf=null, TNfac=null, FL=null, CK=0; const FT=new Map();
+ let TN=null, TNf=null, TNfac=null, FL=null, CK=0, CM=0; const FT=new Map();
  const tnodes=()=>{ const fac=typeof taxiFac==='function'?taxiFac():''; if(!TN||TNf!==taxiNodes||TNfac!==fac){ TNf=taxiNodes; TNfac=fac; TN=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id),zmin:n.zmin||0})).filter(n=>n.p); FT.clear(); } return TN; };
  const flyT=(a,b)=>{ const k=a+'>'+b; let v=FT.get(k); if(v==null){ const fr=flightRoute(a,b); v=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(a),taxiPt(b))/PR.flySpeed)+PR.flyOver; FT.set(k,v); } return v; };
  const WM=new Map(); const wsec=(a,b,run)=>{ const k=Math.round(a.X/20)+','+Math.round(a.Y/20)+','+a.z+'|'+Math.round(b.X/20)+','+Math.round(b.Y/20)+','+b.z+'|'+run.toFixed(2); let v=WM.get(k); if(v==null){ v=wsec0(a,b,run); if(WM.size>400000) WM.clear(); WM.set(k,v); } return v; };
@@ -81,16 +81,16 @@ var SIMX=(function(){
    const pre=x=>x?wsec(a,d0.p,run)+flyT(d0.id,x.id):0, post=y=>y?flyT(y.id,d1.id)+wsec(d1.p,to,run):0;
    for(const x of xs) for(const y of ys){ if(!x&&!y) continue; const c=pre(x)+wsec(x?x.p:a,y?y.p:to,run)+post(y); if(c<direct&&(!best||c<best.c)){ const legs=[]; if(x) legs.push([d0,x]); if(y) legs.push([y,d1]); best={c,legs,x,y}; } }
    return best; }
- function learnNear(s,p){ if(!PR.autoFp||!p) return; for(const n of tnodes()){ if(s.fps.has(n.id)||n.m!==cont(p)||n.zmin>s.L) continue; const d=hyp(n.p,p); if(d>PR.autoFpYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoFp=(s.c.autoFp||0)+1; s.fps.add(n.id); if(FL) FL.push({k:CK,kind:'fp',node:n.id}); } }
+ function learnNear(s,p){ if(!PR.autoFp||!p) return; for(const n of tnodes()){ if(s.fps.has(n.id)||n.m!==cont(p)||n.zmin>s.L) continue; const d=hyp(n.p,p); if(d>PR.autoFpYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoFp=(s.c.autoFp||0)+1; s.fps.add(n.id); if(FL) FL.push({k:CK,m:CM,kind:'fp',node:n.id}); } }
  function walkTo(s,a,to,run,sec){ s.t+=sec; s.c.walkSec+=sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
  function move(s,to){ if(!to) return; if(!s.pos){ s.pos=to; return; } const a=s.pos; const d=hyp(a,to); if(d<5&&cont(a)===cont(to)){ s.pos=to; return; }
-   if(typeof ROUTETIER==='function'&&ROUTETIER) ROUTETIER(s.L);
+   CM++; if(typeof ROUTETIER==='function'&&ROUTETIER) ROUTETIER(s.L);
    const run=runSp(s); const sec=wsec(a,to,run);
    if(PR.autoFly&&sec>PR.flyMinSec){ const b=bestFlight(s,a,to,run,sec); if(b){ let cur=a;
-       if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,cur,dp.p,run,wsec(cur,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); learnNear(s,to); return; }
-       let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
+       if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,cur,dp.p,run,wsec(cur,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); learnNear(s,to); return; }
+       let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
        const tgt=b.y?b.y.p:to; walkTo(s,p,tgt,run,wsec(p,tgt,run));
-       if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); }
+       if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); }
        learnNear(s,to); return; } }
    walkTo(s,a,to,run,sec); learnNear(s,to); }
  const nearest=(pts,p)=>{ let b=null,bd=1e18; for(const x of pts){ if(x.dg) continue; const d=p?(cont(x)===cont(p)?hyp(x,p):1e7+hyp(x,p)):0; if(d<bd){bd=d;b=x;} } return b; };
@@ -134,7 +134,7 @@ var SIMX=(function(){
       if(st.pack&&st.loc){ const c=stepPt(s,st); const C=+META.mobl.c; const cx=Math.floor(c.X/C), cy=Math.floor(c.Y/C); const ms=spawnsIn(cx*C,(cx+1)*C,cy*C,(cy+1)*C).filter(m=>fightable(s.L,Math.round(m.lv))).map(m=>({X:m.X,Y:m.Y,z:c.z,id:m.id,t:'n',lv:m.lv})); if(ms.length) work(s,{pts:ms,center:c},ms.length,()=>1); break; }
       if(+st.amount>0&&+st.xph>0){ const p=stepPt(s,st); if(p) move(s,p); const sec=+st.amount/(+st.xph)*3600; s.t+=sec; s.c.fixedSec+=sec; gain(s,+st.amount,'xpKill'); } break; }
     case 'travel':{ const k=st.kind;
-      if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
+      if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=st.from&&s.fps.has(st.from)&&META.taxi.nodes[st.from]&&META.taxi.nodes[st.from].m===cont(s.pos)?st.from:nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
         if(dep&&dep!==dest&&META.taxi.nodes[dep].m===dn.m){ move(s,taxiPt(dep)); const fr=flightRoute(dep,dest); const sec=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(dep),taxiPt(dest))/PR.flySpeed)+PR.flyOver; s.t+=sec; s.c.flySec+=sec; s.pos=taxiPt(dest); } break; }
       if(k==='fp'){ const id=st.node||resolveNode(st); const p=id&&taxiPt(id); if(p){ move(s,p); s.fps.add(id); s.t+=PR.talk; s.c.talks++; } break; }
       if(k==='hs'||k==='home'){ if(k==='home'){ s.bind=s.pos; s.t+=PR.talk; break; } if(s.bind&&s.t>=s.hsReady){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.pos=s.bind; s.hsReady=s.t+PR.hearthCd; } else err='hearth not ready'; break; }
@@ -147,7 +147,7 @@ var SIMX=(function(){
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); WM.clear(); FT.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
-   FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
+   FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; CM=0; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); if(opt.times) opt.times[k]=s.t; for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
    if(snaps) snaps[steps.length]=clone(s);
    return {t:s.t,tg:tAt,L:s.L,xp:s.xp,errs:s.errs,soft:R.soft,err:R.err,lvT,c:s.c,state:s,snaps}; }
  return {runRested,trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};
