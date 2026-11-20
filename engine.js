@@ -155,7 +155,7 @@ var SIMX=(function(){
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); WM.clear(); FT.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
-   FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; CM=0; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); if(opt.times) opt.times[k]=s.t; for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
+   FL=opt.flyLog||null; for(let k=k0;k<steps.length;k++){ R.k=k; CK=k; CM=0; tent(); if(snaps) snaps[k]=clone(s); const L0=s.L; play(s,steps[k],R); if(opt.times) opt.times[k]=s.t; if(opt.onStep) opt.onStep(k,s); for(let l=L0+1;l<=s.L;l++) if(lvT[l]==null) lvT[l]=s.t; if(tAt==null&&s.L>=tg){ tAt=s.t; if(opt.stopAtTgt) break; } }
    if(snaps) snaps[steps.length]=clone(s);
    return {t:s.t,tg:tAt,L:s.L,xp:s.xp,errs:s.errs,soft:R.soft,err:R.err,lvT,c:s.c,state:s,snaps}; }
  return {runRested,trace:(on)=>{ TR=on?[]:null; return TR; },get tr(){ return TR; },DEF,setParams,run,questXP,needsOf,newState,clone,get params(){ return PR; }};
