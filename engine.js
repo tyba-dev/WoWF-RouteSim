@@ -151,7 +151,12 @@ var SIMX=(function(){
    }
    if(err){ s.errs++; R.err&&R.err.push([R.k,st.t,st.q||st.kind,err]); } }
  // ---------- public: play a whole route or resume from a snapshot ----------
- function runRested(steps,ch,opt={}){ const RS=opt.rested||ch.rested; if(!RS||!RS.on) return run(steps,ch,opt); let r=run(steps,ch,Object.assign({},opt,{rested:null})); for(let i=0;i<4;i++){ const T=(opt.tgt&&r.tg)||r.t; const st=Math.max(0,T-(RS.hours||50)*3600); const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st})); const d=Math.abs(((opt.tgt&&r2.tg)||r2.t)-T); r=r2; if(d<30) break; } return r; }
+ function runRested(steps,ch,opt={}){ const RS=opt.rested||ch.rested; if(!RS||!RS.on) return run(steps,ch,opt); const H=(RS.hours||50)*3600; const tg=opt.tgt||60;
+  /* tents may go anywhere in the last H hours of play: the window is fitted to the end (target level, else the route's end), then started later hour by hour while that brings the target sooner (higher-level tents are worth more) */
+  const val=r=>r.lvT&&r.lvT[tg]!=null?r.lvT[tg]:1e9-(r.L*1e6+r.xp); const end=r=>r.lvT&&r.lvT[tg]!=null?r.lvT[tg]:r.t;
+  let r=run(steps,ch,Object.assign({},opt,{rested:null})); let st=0; for(let i=0;i<4;i++){ st=Math.max(0,end(r)-H); const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st})); const d=Math.abs(end(r2)-end(r)); r=r2; r.restStart=st; if(d<30) break; }
+  if(opt.restScan!==false){ for(let h=1;h<=(opt.restScan||12);h++){ const st2=st+h*3600; const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st2})); if(st2<end(r2)-H-60) break; if(val(r2)<val(r)){ r=r2; r.restStart=st2; } } }
+  return r; }
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); WM.clear(); FT.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};
    const RS=opt.rested; const tent=()=>{ if(!RS||!RS.on||s.L<(RS.minL||5)||s.L>=60||s.c.tents>=(RS.n||50)) return; const st0=opt.restStart??0; if(s.t<st0) return; if(s.tentAt!=null&&s.t<s.tentAt+3600) return; s.tentAt=s.t; s.c.tents++; s.rp+=(RS.pct||0.05)*XP_TABLE[s.L]; const ts=RS.secs??60; s.t+=ts; s.c.tentSec+=ts; };
