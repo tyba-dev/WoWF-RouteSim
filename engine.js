@@ -11,8 +11,8 @@ var SIMX=(function(){
  let TR=null; let CUR={};
  const DEF={ talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
-   detour:1.0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1,
-   autoFly:0, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
+   detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1,
+   autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
  const hyp=(a,b)=>Math.hypot(a.X-b.X,a.Y-b.Y);
@@ -65,7 +65,7 @@ var SIMX=(function(){
  // ---------- moving ----------
  function wayKill(s,a,b){ if(!PR.wayKills||s.L>=PR.mountLevel||cont(a)!==cont(b)) return; const d=hyp(a,b); if(d<30||d>6000) return; { const tt=tramSecs(a,b,7); if(tt!=null&&tt<d*1.25/7) return; }
    const ms=spawnsIn(Math.min(a.X,b.X)-45,Math.max(a.X,b.X)+45,Math.min(a.Y,b.Y)-45,Math.max(a.Y,b.Y)+45); const dx=b.X-a.X, dy=b.Y-a.Y, L2=dx*dx+dy*dy; let n=0,x=0,sec=0;
-   for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mobXP(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); }
+   for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mobXP(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); if(PR.alongCredit) pool(s,null,{t:'n',id:m.id}); }
    if(n){ s.t+=sec; s.c.wayKills+=n; s.c.waySec+=sec; gain(s,Math.round(x),'xpWay'); } }
  // ---------- flights the group takes on its own (autoFly) and flight masters it talks to in passing (autoFp) ----------
  let TN=null, TNf=null, TNfac=null, FL=null, CK=0, CM=0; const FT=new Map();
@@ -83,16 +83,22 @@ var SIMX=(function(){
    return best; }
  function learnNear(s,p){ if(!PR.autoFp||!p) return; for(const n of tnodes()){ if(s.fps.has(n.id)||n.m!==cont(p)||n.zmin>s.L) continue; const d=hyp(n.p,p); if(d>PR.autoFpYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoFp=(s.c.autoFp||0)+1; s.fps.add(n.id); if(FL) FL.push({k:CK,m:CM,kind:'fp',node:n.id}); } }
  function walkTo(s,a,to,run,sec){ s.t+=sec; s.c.walkSec+=sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
+ // inns (innkeepers of the faction) for binding
+ let INN=null, INNfac=null; const inns=()=>{ const fac=typeof taxiFac==='function'?taxiFac():'A'; if(!INN||INNfac!==fac){ INNfac=fac; INN=[]; for(const v of Object.values(META.vend||{})){ if(!/innkeeper/i.test(v[1]||'')||!String(v[2]||'').includes(fac)) continue; for(const [z,x,y] of (v[3]||[])){ const p=zp2plane(z,x,y); if(p) INN.push(p); } } } return INN; };
+ function bindNear(s,p){ if(!PR.autoBind||!p) return; if(s.bind&&cont(s.bind)===cont(p)&&hyp(s.bind,p)<PR.autoBindYd) return; for(const n of inns()){ if(cont(n)!==cont(p)) continue; const d=hyp(n,p); if(d>PR.autoBindYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoBind=(s.c.autoBind||0)+1; s.bind=n; if(FL) FL.push({k:CK,m:CM,kind:'home'}); return; } }
+ // one leg from a to `to`: walking, or a flight plan (bestFlight), as cost and a way to play it
+ function legPlan(s,a,to,run,canFly){ const sec=wsec(a,to,run); let best={c:sec,b:null}; if(canFly&&PR.autoFly&&sec>PR.flyMinSec){ const b=bestFlight(s,a,to,run,sec); if(b&&b.c<sec) best={c:b.c,b}; } return best; }
+ function playLeg(s,a,to,run,pl){ const b=pl.b; if(!b){ walkTo(s,a,to,run,wsec(a,to,run)); return; }
+   if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,a,dp.p,run,wsec(a,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); return; }
+   let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
+   const tgt=b.y?b.y.p:to; walkTo(s,p,tgt,run,wsec(p,tgt,run));
+   if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); } }
  function move(s,to){ if(!to) return; if(!s.pos){ s.pos=to; return; } const a=s.pos; const d=hyp(a,to); if(d<5&&cont(a)===cont(to)){ s.pos=to; return; }
    CM++; if(typeof ROUTETIER==='function'&&ROUTETIER) ROUTETIER(s.L);
-   const run=runSp(s); const sec=wsec(a,to,run);
-   if(PR.autoFly&&sec>PR.flyMinSec){ const b=bestFlight(s,a,to,run,sec); if(b){ let cur=a;
-       if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,cur,dp.p,run,wsec(cur,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); learnNear(s,to); return; }
-       let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
-       const tgt=b.y?b.y.p:to; walkTo(s,p,tgt,run,wsec(p,tgt,run));
-       if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); }
-       learnNear(s,to); return; } }
-   walkTo(s,a,to,run,sec); learnNear(s,to); }
+   const run=runSp(s); const first=!PR.flyFirstOnly||CM===1; const pl=legPlan(s,a,to,run,first);
+   // the hearthstone, when it is ready and saves enough (Polestar's addon rule: a leg of 3+ minutes, 2+ minutes saved)
+   if(PR.autoHs&&first&&s.bind&&s.t>=s.hsReady&&pl.c>=PR.hsMinSec){ const ph=legPlan(s,s.bind,to,run,true); const hc=PR.hearthCast+ph.c; if(hc<pl.c-PR.hsGain){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.hsReady=s.t+PR.hearthCd; s.c.autoHs=(s.c.autoHs||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'hs'}); s.pos=s.bind; playLeg(s,s.bind,to,run,ph); learnNear(s,to); bindNear(s,to); return; } }
+   playLeg(s,a,to,run,pl); learnNear(s,to); bindNear(s,to); }
  const nearest=(pts,p)=>{ let b=null,bd=1e18; for(const x of pts){ if(x.dg) continue; const d=p?(cont(x)===cont(p)?hyp(x,p):1e7+hyp(x,p)):0; if(d<bd){bd=d;b=x;} } return b; };
  // ---------- killing at a ground: pulls of up to pullSize targets, walking a nearest-neighbour tour; respawns after a full sweep ----------
  function work(s,g,kills,onKill){ if(!g||!g.pts.length||kills<=0) return 0; const pts=g.pts; const start=s.pos&&cont(s.pos)===cont(g.center)?s.pos:g.center; move(s,nearest(pts,start)||g.center);
@@ -126,12 +132,13 @@ var SIMX=(function(){
    switch(st.t){
     case 'accept':{ const q=st.q, x=Q(q); if(!x){ err='unknown'; break; } if(s.log.has(q)||s.done.has(q)) break;
       if((x.ps||[]).length&&!(x.ps||[]).some(p=>s.done.has(p))) err='prereq'; if((x.pg||[]).some(p=>!s.done.has(p))) err='prereq'; if(s.L<(x.r||1)) err='level';
-      const p=nearest(starterPts(q),s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++; s.log.set(q,needsOf(q,s.party)); break; }
+      const p=nearest(starterPts(q),s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++; if(PR.logCap&&s.log.size>=PR.logCap) err='log full'; s.log.set(q,needsOf(q,s.party)); if(s.log.size>(s.c.logPeak||0)) s.c.logPeak=s.log.size; break; }
     case 'complete':{ const q=st.q; if(!s.log.has(q)&&!s.done.has(q)){ s.log.set(q,needsOf(q,s.party)); R.soft++; } const ns=s.log.get(q); if(!ns) break; ns.forEach((n,i)=>{ if(st.obj&&n.line!=null&&n.line!==st.obj) return; doNeed(s,q,i+1,n); }); break; }
     case 'turnin':{ const q=st.q; if(s.done.has(q)) break; if(!s.log.has(q)){ s.log.set(q,needsOf(q,s.party)); R.soft++; } const ns=s.log.get(q); for(const [i,n] of ns.entries()) if(n.rem>0) doNeed(s,q,i+1,n); const p=nearest(finisherPts(q),s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++;
       s.log.delete(q); s.done.add(q); gain(s,st.xpo!=null&&R.useXpo?+st.xpo:questXP(q,s.L),'xpQuest'); break; }
     case 'grind':{ if(st.mode==='run'){ const p=stepPt(s,st); if(p) move(s,p); const sec=(+st.mins||0)*60; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,s.L,s.party)*mobXP(s.L,s.L,false,s.party)*DG_RUN_XP); gain(s,x,'xpRun'); break; }
       if(st.pack&&st.loc){ const c=stepPt(s,st); const C=+META.mobl.c; const cx=Math.floor(c.X/C), cy=Math.floor(c.Y/C); const ms=spawnsIn(cx*C,(cx+1)*C,cy*C,(cy+1)*C).filter(m=>fightable(s.L,Math.round(m.lv))).map(m=>({X:m.X,Y:m.Y,z:c.z,id:m.id,t:'n',lv:m.lv})); if(ms.length) work(s,{pts:ms,center:c},ms.length,()=>1); break; }
+      if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; const p=stepPt(s,st); if(p) move(s,p); const xps=mobXP(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
       if(+st.amount>0&&+st.xph>0){ const p=stepPt(s,st); if(p) move(s,p); const sec=+st.amount/(+st.xph)*3600; s.t+=sec; s.c.fixedSec+=sec; gain(s,+st.amount,'xpKill'); } break; }
     case 'travel':{ const k=st.kind;
       if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=st.from&&s.fps.has(st.from)&&META.taxi.nodes[st.from]&&META.taxi.nodes[st.from].m===cont(s.pos)?st.from:nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
@@ -139,6 +146,7 @@ var SIMX=(function(){
       if(k==='fp'){ const id=st.node||resolveNode(st); const p=id&&taxiPt(id); if(p){ move(s,p); s.fps.add(id); s.t+=PR.talk; s.c.talks++; } break; }
       if(k==='hs'||k==='home'){ if(k==='home'){ s.bind=s.pos; s.t+=PR.talk; break; } if(s.bind&&s.t>=s.hsReady){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.pos=s.bind; s.hsReady=s.t+PR.hearthCd; } else err='hearth not ready'; break; }
       const p=stepPt(s,st); if(p) move(s,p); break; }
+    case 'custom':{ const p=stepPt(s,st); if(p) move(s,p); if(st.act==='accept'||st.act==='turnin'){ s.t+=PR.talk; s.c.talks++; } if(st.act==='turnin'&&+st.xp>0) gain(s,+st.xp,'xpQuest'); break; }
     default:{ const p=stepPt(s,st); if(p) move(s,p); }
    }
    if(err){ s.errs++; R.err&&R.err.push([R.k,st.t,st.q||st.kind,err]); } }

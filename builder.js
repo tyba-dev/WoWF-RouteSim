@@ -42,6 +42,7 @@ var ROUTEBUILD=function(opt){
    const sp=starterPts(q).filter(okP), fp=finisherPts(q).filter(okP); if(!sp.length||!fp.length) continue;
    const ob=(objectives(q)||[]).filter(o=>!o.pre); if(ob.some(o=>!o.pts||!o.pts.length||o.pts.every(p=>!okP(p)))) continue;
    const obp=ob.map(o=>o.pts.filter(okP)); const zr=Math.max(Math.min(...sp.map(zMin)),Math.min(...fp.map(zMin)),...obp.map(l=>Math.min(...l.map(zMin)))); pool.push({q,sp,fp,ob:obp,r:Math.max(x.r||1,zr),ps:x.ps||[],pg:x.pg||[]}); }
+ if(opt.dumpPool) opt.dumpPool.push(...pool.map(c=>({q:c.q,r:c.r,z:c.sp[0].z})));
  // pack cells: centre = mean spawn of the cell
  const MC=+META.mobl.c; const CELLS=[]; { const by=new Map(); for(const [k,l] of spawnIdx().g) for(const m of l){ const kk=Math.floor(m.X/MC)+','+Math.floor(m.Y/MC); const c=by.get(kk)||by.set(kk,{X:0,Y:0,n:0,lv:[]}).get(kk); c.X+=m.X; c.Y+=m.Y; c.n++; c.lv.push(Math.round(m.lv)); }
    for(const [k,c] of by){ if(c.n<(opt.pkMin||8)) continue; const p={X:c.X/c.n,Y:c.Y/c.n}; const z=plane2zone(p.X,p.Y); if(!z) continue; p.z=z.z; if(!okP(p)) continue; CELLS.push({k,p,lv:c.lv,lo:Math.min(...c.lv),hi:Math.max(...c.lv),loc:{z:z.z,px:Math.round(z.px*10)/10,py:Math.round(z.py*10)/10}}); } }
