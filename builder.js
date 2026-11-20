@@ -28,7 +28,7 @@ var ROUTEBUILD=function(opt){
  const gray=L=>L<10?5:L<20?6:L<30?7:L<40?8:9; const need=totalXP(TGT,0);
  // ---- evaluation (incremental) ----
  let snaps=null, cur=null;
- let RO={}; const ro=o=>Object.assign(o,RO); const setRest=()=>{ const RS=ch.rested; if(!opt.tents||!RS||!RS.on){ RO={}; return; } let T=null; for(let i=0;i<3;i++){ const r=SIMX.run(steps,ch,Object.assign({tgt:TGT},T==null?{}:{rested:RS,restStart:Math.max(0,T-(RS.hours||50)*3600)})); const T2=r.tg||r.t; if(T!=null&&Math.abs(T2-T)<60){ T=T2; break; } T=T2; } RO={rested:RS,restStart:Math.max(0,T-(RS.hours||50)*3600)}; };
+ let RO={}; const ro=o=>Object.assign(o,RO); const setRest=()=>{ const RS=ch.rested; if(!opt.tents||!RS||!RS.on){ RO={}; return; } const H=(RS.hours||50)*3600; const val=r=>r.tg!=null?r.tg:1e9+r.t-totalXP(r.L,r.xp); const runAt=st=>SIMX.run(steps,ch,{tgt:TGT,rested:RS,restStart:st}); const cand=new Set(); if(RO.restStart!=null) cand.add(RO.restStart); const r0=SIMX.run(steps,ch,{tgt:TGT}); let T=r0.tg||r0.t; let best=null; for(let i=0;i<4;i++){ const st=Math.max(0,Math.round(T-H)); if(cand.has(st)&&i) break; cand.add(st); const r=runAt(st); if(!best||val(r)<best.v) best={st,v:val(r)}; T=r.tg||r.t; } if(RO.restStart!=null){ const r=runAt(RO.restStart); if(val(r)<=best.v) best={st:RO.restStart,v:val(r)}; } RO={rested:RS,restStart:best.st}; };
  const full=()=>{ const r=SIMX.run(steps,ch,ro({snaps:true,tgt:TGT})); snaps=r.snaps; cur=meas(r); return cur; };
  const meas=r=>({t:r.t,tg:r.tg,errs:r.errs,L:r.L,tot:totalXP(r.L,r.xp)});
  const evalFrom=(st,k)=>{ const from=snaps[Math.min(k,snaps.length-1)]; const r=SIMX.run(st,ch,ro({from:{k,state:from},tgt:TGT,stopAtTgt:true})); return meas(r); };
