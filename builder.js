@@ -37,7 +37,7 @@ var ROUTEBUILD=function(opt){
    const r=SIMX.run(st.slice(0,end),ch,{from:{k:k0,state:snaps[Math.min(k0,snaps.length-1)]},tgt:TGT,stopAtTgt:true}); const m=meas(r); if(m.tg!=null){ const mf=evalFrom(st,k0); return {m:mf,d:score(mf)-score(cur)}; } return {m,d:score(m)-score(stAt(end-nIns))}; };
  let VK=4; const scoreV=(m,vk)=>m.tg?m.tg:m.t+(need-m.tot)/(vk*XP_TABLE[Math.min(59,m.L)])*3600; const score=m=>scoreV(m,VK);
  // ---- pool ----
- const pool=[]; for(const id of Object.keys(DB.q)){ const q=+id, x=Q(q); if(!x) continue; const e=EXTRA.quests[q]; if(!(e&&e.xp)&&!(QXP[q])) continue; const ql=(e&&e.l)||x.l||1; if(ql>(opt.maxQL||TGT+3)) continue; if((x.r||1)>TGT-1) continue; if(isDungeonQuest(q)) continue; if((opt.ban||[]).includes(q)||(opt.chain||[]).includes(q)) continue;
+ const pool=[]; for(const id of Object.keys(DB.q)){ const q=+id, x=Q(q); if(!x) continue; const e=EXTRA.quests[q]; if(!(e&&e.xp)&&!(QXP[q])) continue; const ql=(e&&e.l)||x.l||1; if(ql>(opt.maxQL||TGT+3)) continue; if((x.r||1)>TGT-1) continue; if(isDungeonQuest(q)) continue; if((opt.ban||[]).includes(q)||(opt.chain||[]).includes(q)) continue; if(opt.banRe&&new RegExp(opt.banRe,'i').test(x.n||'')) continue;
    const w=whyUnavailable(q,{level:60,turned:new Set(),log:new Map()},route); if(w&&w.hard) continue;
    const sp=starterPts(q).filter(okP), fp=finisherPts(q).filter(okP); if(!sp.length||!fp.length) continue;
    const ob=(objectives(q)||[]).filter(o=>!o.pre); if(ob.some(o=>!o.pts||!o.pts.length||o.pts.every(p=>!okP(p)))) continue;
@@ -112,6 +112,16 @@ var ROUTEBUILD=function(opt){
  // ---- large-neighbourhood search: rip out a stretch, regrow it, keep it if the target comes sooner ----
  const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
  const deadline=T0+MS; let it=0; let seed=opt.seedRng||12345; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
+ // ---- prune: drop quests and camp clears whose removal brings the target sooner (their time is worth more than their XP), then regrow ----
+ const pruned=[]; for(let pass=0;pass<(opt.prune||0)&&cur.tg!=null&&Date.now()<deadline-60000;pass++){ let nAcc=0;
+   const need2=new Set(); for(const s of steps){ const x=s.q&&Q(s.q); for(const p of [...(x?.ps||[]),...(x?.pg||[])]) need2.add(p); }
+   const cost=new Map(); steps.forEach((s,k)=>{ if(prot(s)||s.auto) return; const key=s.q?'q'+s.q:s.pack?'p'+s.id:null; if(!key||(s.q&&(CH.includes(s.q)||need2.has(s.q)))) return; const a=snaps[k], b=snaps[k+1]; if(!a||!b) return; const o=cost.get(key)||cost.set(key,{dt:0,dx:0,k0:k}).get(key); o.dt+=b.t-a.t; o.dx+=totalXP(b.L,b.xp)-totalXP(a.L,a.xp); });
+   const cand=[...cost.entries()].filter(([,o])=>snaps[o.k0]&&snaps[o.k0].t<cur.tg).sort((x,y)=>y[1].dt/(y[1].dx+500)-x[1].dt/(x[1].dx+500)).slice(0,opt.pruneN||400);
+   for(const [key] of cand){ if(Date.now()>deadline-60000) break; const isQ=key[0]==='q', id=key.slice(1); const hit=s=>!prot(s)&&!s.auto&&(isQ?String(s.q)===id:s.id===id); const k0=steps.findIndex(hit); if(k0<0) continue;
+     const ns=steps.filter(s=>!hit(s)); let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
+     if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ steps=ns; full(); nAcc++; pruned.push([key,Math.round(cur.tg/60)]); if(isQ) ban.add(+id); } }
+   if(opt.progress) opt.progress({prune:pass,acc:nAcc,tg:Math.round(cur.tg/60)}); if(!nAcc) break;
+   grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
    const n=steps.length; const W=Math.min(n-2,(opt.lnsW||80)+Math.floor(rnd()*(opt.lnsW||80))); const a=FZ+Math.floor(rnd()*Math.max(1,n-W-FZ)); const qs=new Set(), cells=new Set();
    for(let k=a;k<a+W;k++){ const s=steps[k]; if(prot(s)) continue; if(s.q&&!CH.includes(s.q)) qs.add(s.q); if(s.pack&&s.loc){ const p=zp2plane(s.loc.z,s.loc.px,s.loc.py); cells.add(Math.floor(p.X/MC)+','+Math.floor(p.Y/MC)); } }
@@ -121,4 +131,4 @@ var ROUTEBUILD=function(opt){
    const after=fin(cur); if(cur.errs<=svCur.errs&&after<before-30){ lnsLog.push([it,a,W,qs.size,Math.round(before/60),Math.round(after/60)]); if(opt.progress) opt.progress({lns:it,acc:lnsLog.length,min:Math.round(after/60)}); }
    else { steps=sv; usedCell.clear(); sCell.forEach(x=>usedCell.add(x)); usedRun.clear(); sRun.forEach(x=>usedRun.add(x)); full(); } }
  full();
- return {built,lnsIt:it,lnsAcc:lnsLog.length,lnsLog:lnsLog.slice(-20),forced,nFail,nBund,flyAcc,acc,rounds,evals,cur:{t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L},n:steps.length,cells:CELLS.length,pool:pool.length,log:log.slice(-15),secs:Math.round((Date.now()-T0)/1000),steps}; };
+ return {built,nPruned:pruned.length,pruned:pruned.slice(-40),lnsIt:it,lnsAcc:lnsLog.length,lnsLog:lnsLog.slice(-20),forced,nFail,nBund,flyAcc,acc,rounds,evals,cur:{t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L},n:steps.length,cells:CELLS.length,pool:pool.length,log:log.slice(-15),secs:Math.round((Date.now()-T0)/1000),steps}; };
