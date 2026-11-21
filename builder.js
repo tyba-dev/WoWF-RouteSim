@@ -136,6 +136,14 @@ var ROUTEBUILD=function(opt){
        let m; try{ m=evalFrom(ns2,k0); }catch(e){ continue; } evals++;
        if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const v0=runLow(); steps=ns2; full(); if(cur.errs>m.errs||runLow()>v0||cur.tg==null){ steps=svS; full(); continue; } nRel++; nAcc++; } }
      if(opt.progress) opt.progress({relocate:pass,acc:nRel,tg:Math.round(cur.tg/60)}); }
+   // visits: drop a whole stay in one zone (every quest touching it, its camp clears) — saves the trip there, which dropping one quest never does
+   if(opt.visits&&cur.tg!=null){ let nV=0; const zAt=k=>{ const p=snaps[k+1]&&snaps[k+1].pos; return p?p.z:null; }; for(let rep=0;rep<(opt.visitsN||25)&&cur.tg!=null&&Date.now()<deadline-60000;rep++){ let got=false; const vis=[]; let a=0; for(let k=1;k<=steps.length;k++){ if(k===steps.length||zAt(k)!==zAt(a)){ vis.push([a,k]); a=k; } }
+     const cand=vis.filter(([a,b])=>b-a>=2&&snaps[a]&&snaps[a].t<cur.tg).map(([a,b])=>({a,b,dt:snaps[b].t-snaps[a].t})).sort((x,y)=>y.dt-x.dt);
+     for(const v of cand){ if(Date.now()>deadline-60000) break; const qs=new Set(), ids=new Set(); for(let k=v.a;k<v.b;k++){ const s=steps[k]; if(!s||prot(s)||s.auto) continue; if(s.q&&!CH.includes(s.q)&&!need2.has(s.q)) qs.add(s.q); else if(s.pack) ids.add(s.id); } if(!qs.size&&!ids.size) continue;
+       const hit=s=>!prot(s)&&!s.auto&&((s.q&&qs.has(s.q))||ids.has(s.id)); const k0=steps.findIndex(hit); if(k0<0) continue; const ns=steps.filter(s=>!hit(s)); let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
+       if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(); steps=ns; full(); if(runLow()>v0||cur.tg==null){ steps=svS; full(); continue; } nV++; nAcc++; for(const q of qs) ban.add(q); pruned.push(['v'+qs.size+'+'+ids.size,Math.round(cur.tg/60)]); got=true; break; } }
+     if(!got) break; }
+     if(opt.progress) opt.progress({visits:pass,acc:nV,tg:Math.round(cur.tg/60)}); }
    if(!nAcc) break;
    grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); setRest(); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
