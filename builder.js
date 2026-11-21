@@ -114,7 +114,7 @@ var ROUTEBUILD=function(opt){
  const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
  const deadline=T0+MS; let it=0; let seed=opt.seedRng||12345; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
  const RLV=new Map(); for(const r of runs){ if(r.dg) RLV.set('d:'+r.dg,r.lv||1); for(const st of (r.steps||[])) if(st.t==='custom'&&st.name) RLV.set('c:'+st.name,r.lv||1); }
- const runLow=()=>{ let n=0; steps.forEach((s,k)=>{ const key=s.mode==='run'&&s.dg?'d:'+s.dg:s.t==='custom'&&s.act==='accept'?'c:'+s.name:null; const lv=key&&RLV.get(key); if(lv&&snaps[k]&&snaps[k].L<lv-tol) n+=lv-tol-snaps[k].L; }); return n; };
+ const runLow=()=>{ let n=0; steps.forEach((s,k)=>{ const key=s.mode==='run'&&s.dg?'d:'+s.dg:s.t==='custom'&&s.act==='accept'?'c:'+s.name:null; const lv=key&&RLV.get(key); if(lv&&snaps[k]&&snaps[k].L<lv-tol) n+=lv-tol-snaps[k].L; if(lv&&snaps[k]&&snaps[k].L>lv+tol) n+=snaps[k].L-lv-tol; }); return n; };
  // ---- prune: drop quests and camp clears whose removal brings the target sooner (their time is worth more than their XP), then regrow ----
  const pruned=[]; for(let pass=0;pass<(opt.prune||0)&&cur.tg!=null&&Date.now()<deadline-60000;pass++){ let nAcc=0;
    const need2=new Set(); for(const s of steps){ const x=s.q&&Q(s.q); for(const p of [...(x?.ps||[]),...(x?.pg||[])]) need2.add(p); }
