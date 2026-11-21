@@ -11,7 +11,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'..','builder.js'),'utf8')+'
 W.P.ctx.ROUTEBLOCK(opt.block||[]); const taxiShort=vm.runInContext('taxiShort',W.P.ctx);
 const P=Object.assign({autoFly:1,autoFp:1},opt.params||{});
 const h=s=>(s/3600).toFixed(2)+'h';
-W.setParams(P); const RS=R.char&&R.char.rested; const rest=RS&&RS.on?{rested:RS,restStart:W.S.runRested(R.steps,R.char,{tgt:60}).restStart}:{}; /* tents as the route plays them */
+W.setParams(P); const RS=R.char&&R.char.rested; const rest=RS&&RS.on?{rested:RS,restStart:W.S.runRested(R.steps,R.char,{tgt:opt.tgt||60}).restStart}:{}; /* tents as the route plays them */
 const fl=[]; const r0=W.S.run(R.steps,R.char,Object.assign({flyLog:fl,err:true},rest));
 const before=new Map(), after=new Map(); const add=(m,k,s)=>{ if(!m.has(k)) m.set(k,[]); m.get(k).push(s); };
 let lastFlyK=-1, lastDest=null;
