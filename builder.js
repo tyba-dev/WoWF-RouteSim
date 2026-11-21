@@ -144,6 +144,20 @@ var ROUTEBUILD=function(opt){
        if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(); steps=ns; full(); if(runLow()>v0||cur.tg==null){ steps=svS; full(); continue; } nV++; nAcc++; for(const q of qs) ban.add(q); pruned.push(['v'+qs.size+'+'+ids.size,Math.round(cur.tg/60)]); got=true; break; } }
      if(!got) break; }
      if(opt.progress) opt.progress({visits:pass,acc:nV,tg:Math.round(cur.tg/60)}); }
+   // merge: a zone visited more than once — move one stay next to another (later stay to the end of the earlier one, or the earlier stay to the start of the later one), keep it if level 60 comes sooner
+   if(opt.merge&&cur.tg!=null){ let nM=0; const zAt=k=>{ const p=snaps[k+1]&&snaps[k+1].pos; return p?p.z:null; };
+     for(let rep=0;rep<(opt.mergeN||60)&&cur.tg!=null&&Date.now()<deadline-60000;rep++){ let got=false; const vis=[]; let a=0; for(let k=1;k<=steps.length;k++){ if(k===steps.length||zAt(k)!==zAt(a)){ if(zAt(a)!=null) vis.push({a,b:k,z:zAt(a)}); a=k; } }
+       const byZ=new Map(); for(const v of vis){ if(!snaps[v.a]||snaps[v.a].t>=cur.tg) continue; (byZ.get(v.z)||byZ.set(v.z,[]).get(v.z)).push(v); }
+       const tries=[]; for(const [z,vs] of byZ){ if(vs.length<2) continue; for(let i=0;i<vs.length;i++) for(let j=i+1;j<vs.length;j++){ const A=vs[i],B=vs[j]; const nB=B.b-B.a, nA=A.b-A.a; tries.push({A,B,mv:'BtoA',w:nB}); tries.push({A,B,mv:'AtoB',w:nA}); } }
+       tries.sort((x,y)=>x.w-y.w);
+       for(const tr of tries){ if(Date.now()>deadline-60000) break; const {A,B}=tr; let ns, k0;
+         const blk=(v)=>{ const ids=[]; for(let k=v.a;k<v.b;k++) if(!prot(steps[k])&&!steps[k].auto) ids.push(k); return ids; };
+         if(tr.mv==='BtoA'){ const ks=new Set(blk(B)); if(!ks.size) continue; const moved=[...ks].map(k=>steps[k]); ns=[]; steps.forEach((s,k)=>{ if(ks.has(k)) return; ns.push(s); if(k===A.b-1) ns.push(...moved); }); k0=A.b; }
+         else { const ks=new Set(blk(A)); if(!ks.size) continue; const moved=[...ks].map(k=>steps[k]); ns=[]; steps.forEach((s,k)=>{ if(k===B.a) ns.push(...moved); if(ks.has(k)) return; ns.push(s); }); k0=Math.min(...ks); }
+         let m; try{ m=evalFrom(ns,k0); }catch(e){ continue; } evals++;
+         if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(); steps=ns; full(); if(runLow()>v0||cur.tg==null||cur.errs>m.errs){ steps=svS; full(); continue; } nM++; nAcc++; got=true; break; } }
+       if(!got) break; }
+     if(opt.progress) opt.progress({merge:pass,acc:nM,tg:cur.tg?Math.round(cur.tg/60):null}); }
    if(!nAcc) break;
    grow(opt.lnsVks||[0.4,0.2,0.1,0.05,0.03,0.015],Math.min(deadline-60000,Date.now()+(opt.pruneGrowMs||1800000))); setRest(); full(); if(opt.progress) opt.progress({prunegrow:pass,tg:cur.tg?Math.round(cur.tg/60):null}); }
  while(opt.lns&&Date.now()<deadline-30000){ it++; const sv=steps.slice(); const sCell=new Set(usedCell); const sRun=new Set(usedRun); const svCur=cur; const before=fin(cur);
