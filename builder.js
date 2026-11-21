@@ -15,10 +15,10 @@ var ROUTEBLOCK=function(spec){ if(!spec||!NAV||ROUTEBLOCK.done) return; ROUTEBLO
  const gridFor=L=>{ if(forL[L]) return forL[L]; const bl=ids.filter(z=>zmin[z]>L).sort((a,b)=>a-b); const key=bl.join(','); let g=grids.get(key); if(!g){ g={key,g:base.slice()}; for(const z of bl) for(const i of cells[z]) g.g[i]=0; grids.set(key,g); } return forL[L]=g; };
  const pg=PATHS.get.bind(PATHS), ps=PATHS.set.bind(PATHS), ph=PATHS.has.bind(PATHS); PATHS.clear();
  PATHS.get=k=>pg(k+'#'+tier); PATHS.set=(k,v)=>ps(k+'#'+tier,v); PATHS.has=k=>ph(k+'#'+tier);
- ROUTETIER=L=>{ const g=gridFor(Math.max(1,Math.min(60,L|0))); if(NAV.g!==g.g){ NAV.g=g.g; tier=g.key; } }; ROUTETIER(1);
+ ROUTETIER=L=>{ const g=gridFor(Math.max(1,Math.min(60,L|0))); if(NAV.g!==g.g){ NAV.g=g.g; tier=g.key; ROUTETIERKEY=tier; } }; ROUTETIER(1);
  ROUTEBLOCK.zoneMin=p=>{ if(!p) return 0; let z=p.z; if(z==null){ const q=plane2zone(p.X,p.Y); z=q&&(q.z!=null?q.z:q); } return zmin[+z]||0; };
  const tn=taxiNodes; taxiNodes=(...a)=>tn(...a).filter(n=>{ const p=taxiPt(n.id); if(!p) return false; const m=ROUTEBLOCK.zoneMin(p); n.zmin=m; return m<99; }); };
-var ROUTETIER=null;
+var ROUTETIER=null; var ROUTETIERKEY='';
 var ROUTEBUILD=function(opt){
  const T0=Date.now(), MS=opt.ms||1800000, TGT=opt.tgt||40, K=opt.K||40, tol=opt.lvTol??1;
  const CH0=opt.char; const ch=Object.assign({},CH0);

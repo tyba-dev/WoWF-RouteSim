@@ -71,7 +71,7 @@ var SIMX=(function(){
  let TN=null, TNf=null, TNfac=null, FL=null, CK=0, CM=0; const FT=new Map();
  const tnodes=()=>{ const fac=typeof taxiFac==='function'?taxiFac():''; if(!TN||TNf!==taxiNodes||TNfac!==fac){ TNf=taxiNodes; TNfac=fac; TN=taxiNodes().map(n=>({id:n.id,m:n.m,p:taxiPt(n.id),zmin:n.zmin||0})).filter(n=>n.p); FT.clear(); } return TN; };
  const flyT=(a,b)=>{ const k=a+'>'+b; let v=FT.get(k); if(v==null){ const fr=flightRoute(a,b); v=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(a),taxiPt(b))/PR.flySpeed)+PR.flyOver; FT.set(k,v); } return v; };
- const WM=new Map(); const wsec=(a,b,run)=>{ const k=Math.round(a.X/20)+','+Math.round(a.Y/20)+','+a.z+'|'+Math.round(b.X/20)+','+Math.round(b.Y/20)+','+b.z+'|'+run.toFixed(2); let v=WM.get(k); if(v==null){ v=wsec0(a,b,run); if(WM.size>400000) WM.clear(); WM.set(k,v); } return v; };
+ const WM=new Map(); const wsec=(a,b,run)=>{ const k=Math.round(a.X/20)+','+Math.round(a.Y/20)+','+a.z+'|'+Math.round(b.X/20)+','+Math.round(b.Y/20)+','+b.z+'|'+run.toFixed(2)+'|'+(typeof ROUTETIERKEY!=='undefined'?ROUTETIERKEY:''); let v=WM.get(k); if(v==null){ v=wsec0(a,b,run); if(WM.size>400000) WM.clear(); WM.set(k,v); } return v; };
  const wsec0=(a,b,run)=>{ const same=cont(a)===cont(b); const d=hyp(a,b); if(same&&d<5) return 0; let sec; try{ sec=walkSecs(a,b,run,same?d:5000); }catch(e){ sec=null; } if(sec==null||!isFinite(sec)) sec=(same?d:5000)*1.25/run; return sec*PR.detour; };
  function bestFlight(s,a,to,run,direct){ const K=tnodes().filter(n=>s.fps.has(n.id)&&n.zmin<=s.L); const near=(m,p,n)=>K.filter(x=>x.m===m).sort((x,y)=>hyp(x.p,p)-hyp(y.p,p)).slice(0,n);
    let best=null; const ca=cont(a), cb=cont(to);
