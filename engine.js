@@ -92,7 +92,7 @@ var SIMX=(function(){
    if(cont(a)===cont(to)){ const [dp,ds]=b.legs[0]; walkTo(s,a,dp.p,run,wsec(a,dp.p,run)); const f=flyT(dp.id,ds.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:dp.id,node:ds.id}); s.pos=ds.p; walkTo(s,ds.p,to,run,wsec(ds.p,to,run)); return; }
    let p=a; if(b.x){ const [d0,x]=b.legs[0]; walkTo(s,p,d0.p,run,wsec(p,d0.p,run)); const f=flyT(d0.id,x.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:d0.id,node:x.id}); p=x.p; s.pos=p; }
    const tgt=b.y?b.y.p:to; walkTo(s,p,tgt,run,wsec(p,tgt,run));
-   if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:y.id,node:d1.id}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); } }
+   if(b.y){ const [y,d1]=b.legs[b.legs.length-1]; const f=flyT(y.id,d1.id); s.t+=f; s.c.flySec+=f; s.c.autoFly=(s.c.autoFly||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'fly',dep:y.id,node:d1.id,cross:1}); s.pos=d1.p; walkTo(s,d1.p,to,run,wsec(d1.p,to,run)); } }
  function move(s,to){ if(!to) return; if(!s.pos){ s.pos=to; return; } const a=s.pos; const d=hyp(a,to); if(d<5&&cont(a)===cont(to)){ s.pos=to; return; }
    CM++; if(typeof ROUTETIER==='function'&&ROUTETIER) ROUTETIER(s.L);
    const run=runSp(s); const first=!PR.flyFirstOnly||CM===1; const pl=legPlan(s,a,to,run,first);
