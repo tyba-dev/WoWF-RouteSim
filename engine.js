@@ -9,7 +9,8 @@
 'use strict';
 var SIMX=(function(){
  let TR=null; let CUR={};
- const DEF={ talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
+ const mxp=(a,b,c,d)=>Math.round(mobXP(a,b,c,d)*(PR.mobXp??1)); /* Forever's kill XP relative to the classic formula */
+ const DEF={ mobXp:1, dgLvl:0, dgMobXp:1, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
    detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1,
    autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
@@ -65,7 +66,7 @@ var SIMX=(function(){
  // ---------- moving ----------
  function wayKill(s,a,b){ if(!PR.wayKills||s.L>=PR.mountLevel||cont(a)!==cont(b)) return; const d=hyp(a,b); if(d<30||d>6000) return; { const tt=tramSecs(a,b,7); if(tt!=null&&tt<d*1.25/7) return; }
    const ms=spawnsIn(Math.min(a.X,b.X)-45,Math.max(a.X,b.X)+45,Math.min(a.Y,b.Y)-45,Math.max(a.Y,b.Y)+45); const dx=b.X-a.X, dy=b.Y-a.Y, L2=dx*dx+dy*dy; let n=0,x=0,sec=0;
-   for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mobXP(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); if(PR.alongCredit) pool(s,null,{t:'n',id:m.id}); }
+   for(const m of ms){ const ml=Math.round(m.lv); if(!fightable(s.L,ml)) continue; let t=((m.X-a.X)*dx+(m.Y-a.Y)*dy)/L2; t=Math.max(0,Math.min(1,t)); if(Math.hypot(a.X+t*dx-m.X,a.Y+t*dy-m.Y)>Math.max(5,Math.min(45,PR.aggro+(ml-s.L)))) continue; const e=elite(m.id); n++; x+=mxp(s.L,ml,e,s.party)*(1+PR.food); sec+=PR.perMob*(e?PR.eliteMul:1); if(PR.alongCredit) pool(s,null,{t:'n',id:m.id}); }
    if(n){ s.t+=sec; s.c.wayKills+=n; s.c.waySec+=sec; gain(s,Math.round(x),'xpWay'); } }
  // ---------- flights the group takes on its own (autoFly) and flight masters it talks to in passing (autoFp) ----------
  let TN=null, TNf=null, TNfac=null, FL=null, CK=0, CM=0; const FT=new Map();
@@ -107,7 +108,7 @@ var SIMX=(function(){
    const m=order.length, run=runSp(s); const w0=s.c.waitSec, t0=s.t; const killedAt=new Array(m).fill(-1e9); let done=0, i=0, inPull=0;
    while(done<kills){ const k=i%m; const p=order[k]; const w=hyp(s.pos,p)/run; s.t+=w; s.c.walkSec+=w; s.pos=p; const ready=killedAt[k]+resp(p.id); if(ready>s.t){ const wt=ready-s.t; s.t+=wt; s.c.waitSec+=wt; }
      const ml=p.lv!=null?Math.round(p.lv):s.L; const e=p.t==='n'&&elite(p.id); const ks=p.t==='o'?PR.interact/(PR.splitObjects?s.party:1):PR.perMob*(e?PR.eliteMul:1); s.t+=ks; if(p.t==='o') s.c.interacts++; else { s.c.kills++; s.c.killSec+=ks; }
-     if(p.t==='n'){ inPull++; if(inPull>=PR.pullSize){ s.t+=PR.pullBase+PR.pullRest; s.c.pulls++; s.c.pullSec+=PR.pullBase; s.c.restSec+=PR.pullRest; inPull=0; } if(p.lv!=null&&fightable(s.L,ml)) gain(s,Math.round(mobXP(s.L,ml,e,s.party)*(1+PR.food)),'xpKill'); }
+     if(p.t==='n'){ inPull++; if(inPull>=PR.pullSize){ s.t+=PR.pullBase+PR.pullRest; s.c.pulls++; s.c.pullSec+=PR.pullBase; s.c.restSec+=PR.pullRest; inPull=0; } if(p.lv!=null&&fightable(s.L,ml)) gain(s,Math.round(mxp(s.L,ml,e,s.party)*(1+PR.food)),'xpKill'); }
      killedAt[k]=s.t; done+=onKill(p); i++; if(i>m*40) break; }
    if(inPull){ s.t+=PR.pullBase+PR.pullRest; s.c.pulls++; s.c.pullSec+=PR.pullBase; s.c.restSec+=PR.pullRest; }
    if(TR) TR.push({q:CUR.q,k:CUR.k,item:CUR.item,pr:CUR.pr,kills,m,done,wait:Math.round(s.c.waitSec-w0),sec:Math.round(s.t-t0)});
@@ -136,9 +137,9 @@ var SIMX=(function(){
     case 'complete':{ const q=st.q; if(!s.log.has(q)&&!s.done.has(q)){ s.log.set(q,needsOf(q,s.party)); R.soft++; } const ns=s.log.get(q); if(!ns) break; ns.forEach((n,i)=>{ if(st.obj&&n.line!=null&&n.line!==st.obj) return; doNeed(s,q,i+1,n); }); break; }
     case 'turnin':{ const q=st.q; if(s.done.has(q)) break; if(!s.log.has(q)){ s.log.set(q,needsOf(q,s.party)); R.soft++; } const ns=s.log.get(q); for(const [i,n] of ns.entries()) if(n.rem>0) doNeed(s,q,i+1,n); const p=nearest(finisherPts(q),s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++;
       s.log.delete(q); s.done.add(q); gain(s,st.xpo!=null&&R.useXpo?+st.xpo:questXP(q,s.L),'xpQuest'); break; }
-    case 'grind':{ if(st.mode==='run'){ const p=stepPt(s,st); if(p) move(s,p); const sec=(+st.mins||0)*60; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,s.L,s.party)*mobXP(s.L,s.L,false,s.party)*DG_RUN_XP); gain(s,x,'xpRun'); break; }
+    case 'grind':{ if(st.mode==='run'){ const p=stepPt(s,st); if(p) move(s,p); const lvR=+st.lv||0; /* a run over its level clears faster (dgLvl per level, 0.6x to 1.5x) and its mobs give less */ const f=lvR&&PR.dgLvl?Math.min(1.5,Math.max(0.6,1-PR.dgLvl*(s.L-lvR))):1; const sec=(+st.mins||0)*60*f; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,lvR||s.L,s.party)*mxp(s.L,lvR||s.L,false,s.party)*DG_RUN_XP*(PR.dgMobXp??1)); /* dungeon trash gives little: runs are for their quests */ gain(s,x,'xpRun'); break; }
       if(st.pack&&st.loc){ const c=stepPt(s,st); const C=+META.mobl.c; const cx=Math.floor(c.X/C), cy=Math.floor(c.Y/C); const ms=spawnsIn(cx*C,(cx+1)*C,cy*C,(cy+1)*C).filter(m=>fightable(s.L,Math.round(m.lv))).map(m=>({X:m.X,Y:m.Y,z:c.z,id:m.id,t:'n',lv:m.lv})); if(ms.length) work(s,{pts:ms,center:c},ms.length,()=>1); break; }
-      if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; if(st.extra&&st.note){ const key='g:'+st.note; if(s.done.has(key)) break; s.done.add(key); } const p=stepPt(s,st); if(p) move(s,p); const xps=mobXP(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
+      if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; if(st.extra&&st.note){ const key='g:'+st.note; if(s.done.has(key)) break; s.done.add(key); } const p=stepPt(s,st); if(p) move(s,p); const xps=mxp(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
       if(+st.amount>0&&+st.xph>0){ const p=stepPt(s,st); if(p) move(s,p); const sec=+st.amount/(+st.xph)*3600; s.t+=sec; s.c.fixedSec+=sec; gain(s,+st.amount,'xpKill'); } break; }
     case 'travel':{ const k=st.kind;
       if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=st.from&&s.fps.has(st.from)&&META.taxi.nodes[st.from]&&META.taxi.nodes[st.from].m===cont(s.pos)?st.from:nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
