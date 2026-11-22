@@ -8,5 +8,5 @@ const W=require('../index.js').open(); W.setParams(opt.params||{});
 const R={id:'build',name:opt.name||'Own route',char:opt.char,steps:[]}; W.useRoute(R);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'..','builder.js'),'utf8')+'\n;globalThis.ROUTEBUILD=ROUTEBUILD;',W.P.ctx,{filename:'builder.js'});
 opt.progress=p=>console.error(JSON.stringify(p));
-const res=W.P.ctx.ROUTEBUILD(opt); R.steps=res.steps; delete res.steps;
+const res=W.P.ctx.ROUTEBUILD(opt); R.steps=res.steps; delete res.steps; if(res.restStart!=null&&R.char&&R.char.rested) R.char=Object.assign({},R.char,{rested:Object.assign({},R.char.rested,{start:res.restStart})}); /* the tent window the build used */
 fs.writeFileSync(OUT,JSON.stringify(R)); console.log(JSON.stringify(res));

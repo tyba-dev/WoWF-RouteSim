@@ -157,6 +157,7 @@ var SIMX=(function(){
   const val=r=>r.lvT&&r.lvT[tg]!=null?r.lvT[tg]:1e9-(r.L*1e6+r.xp); const end=r=>r.lvT&&r.lvT[tg]!=null?r.lvT[tg]:r.t;
   let r=run(steps,ch,Object.assign({},opt,{rested:null})); let st=0; for(let i=0;i<4;i++){ st=Math.max(0,end(r)-H); const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st})); const d=Math.abs(end(r2)-end(r)); r=r2; r.restStart=st; if(d<30) break; }
   if(opt.restScan!==false){ for(let h=1;h<=(opt.restScan||12);h++){ const st2=st+h*3600; const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:st2})); if(st2<end(r2)-H-60) break; if(val(r2)<val(r)){ r=r2; r.restStart=st2; } } }
+  if(RS.start!=null&&RS.start!==r.restStart){ const r2=run(steps,ch,Object.assign({},opt,{rested:RS,restStart:RS.start})); if(RS.start>=end(r2)-H-60&&val(r2)<val(r)){ r=r2; r.restStart=RS.start; } } /* the window the route was built with, when still inside the last H hours */
   return r; }
  function setParams(p){ PR=Object.assign({},DEF,p||{}); GC.clear(); WM.clear(); FT.clear(); }
  function run(steps,ch,opt={}){ const snaps=opt.snaps?[]:null; let s=opt.from?clone(opt.from.state):newState(ch); const k0=opt.from?opt.from.k:0; const R={soft:0,err:opt.err?[]:null,useXpo:!!opt.useXpo,allFps:!!opt.allFps,k:0}; const tg=opt.tgt||60; let tAt=null; const lvT={};

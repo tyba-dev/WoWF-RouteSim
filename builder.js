@@ -177,4 +177,4 @@ var ROUTEBUILD=function(opt){
    const after=fin(cur); if(cur.errs<=svCur.errs&&after<before-30){ lnsLog.push([it,a,W,qs.size,Math.round(before/60),Math.round(after/60)]); if(opt.progress) opt.progress({lns:it,acc:lnsLog.length,min:Math.round(after/60)}); }
    else { steps=sv; usedCell.clear(); sCell.forEach(x=>usedCell.add(x)); usedRun.clear(); sRun.forEach(x=>usedRun.add(x)); full(); } }
  full();
- return {built,nPruned:pruned.length,pruned:pruned.slice(-40),lnsIt:it,lnsAcc:lnsLog.length,lnsLog:lnsLog.slice(-20),forced,nFail,nBund,flyAcc,acc,rounds,evals,cur:{t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L},n:steps.length,cells:CELLS.length,pool:pool.length,log:log.slice(-15),secs:Math.round((Date.now()-T0)/1000),steps}; };
+ return {restStart:RO.restStart,built,nPruned:pruned.length,pruned:pruned.slice(-40),lnsIt:it,lnsAcc:lnsLog.length,lnsLog:lnsLog.slice(-20),forced,nFail,nBund,flyAcc,acc,rounds,evals,cur:{t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L},n:steps.length,cells:CELLS.length,pool:pool.length,log:log.slice(-15),secs:Math.round((Date.now()-T0)/1000),steps}; };
