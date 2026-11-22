@@ -152,6 +152,15 @@ var ROUTEBUILD=function(opt){
        for(const k of cands){ const ns=rest.slice(0,k).concat(blk,rest.slice(k)); let m; try{ m=evalFrom(ns,Math.min(a,k)); }catch(e){ continue; } evals++; if(m.errs>cur.errs||m.tg==null) continue; if(!best||m.tg<best.tg) best={k,tg:m.tg,ns}; }
        if(best){ const svS=steps; steps=best.ns; full(); if(cur.tg!=null&&cur.errs<=e0&&comp()<c0-5){ nR++; nAcc++; } else { steps=svS; full(); } } }
      if(opt.progress) opt.progress({runMove:pass,acc:nR,tg:cur.tg?Math.round(cur.tg/60):null,low:runLow()}); }
+   // swap: exchange two zone stays close in the order (next or the one after), keep it if level 60 comes sooner — reorders the zone sequence
+   if(opt.swap&&cur.tg!=null){ let nS=0; const zAt=k=>{ const p=snaps[k+1]&&snaps[k+1].pos; return p?p.z:null; }; let i0=0;
+     for(let rep=0;rep<(opt.swapN||80)&&cur.tg!=null&&Date.now()<deadline-60000;rep++){ const vis=[]; let a=0; for(let k=1;k<=steps.length;k++){ if(k===steps.length||zAt(k)!==zAt(a)){ vis.push({a,b:k}); a=k; } } let got=false;
+       for(let i=i0;i<vis.length-1&&!got;i++){ if(Date.now()>deadline-60000) break; if(!snaps[vis[i].a]||snaps[vis[i].a].t>=cur.tg) break;
+         for(const d of [1,2]){ const A=vis[i], B=vis[i+d]; if(!B) continue; const mid=steps.slice(A.b,B.a); const blkA=steps.slice(A.a,A.b), blkB=steps.slice(B.a,B.b); if(blkA.some(prot)||blkB.some(prot)) continue;
+           const ns=steps.slice(0,A.a).concat(blkB,mid,blkA,steps.slice(B.b)); let m; try{ m=evalFrom(ns,A.a); }catch(e){ continue; } evals++;
+           if(m.errs<=cur.errs&&m.tg!=null&&m.tg<cur.tg-5){ const svS=steps, v0=runLow(), e0=cur.errs; steps=ns; full(); if(runLow()>v0||cur.tg==null||cur.errs>e0){ steps=svS; full(); continue; } nS++; nAcc++; got=true; i0=Math.max(0,i-2); break; } } }
+       if(!got) break; }
+     if(opt.progress) opt.progress({swap:pass,acc:nS,tg:cur.tg?Math.round(cur.tg/60):null}); }
    // merge: a zone visited more than once — move one stay next to another (later stay to the end of the earlier one, or the earlier stay to the start of the later one), keep it if level 60 comes sooner
    if(opt.merge&&cur.tg!=null){ let nM=0; const zAt=k=>{ const p=snaps[k+1]&&snaps[k+1].pos; return p?p.z:null; };
      for(let rep=0;rep<(opt.mergeN||60)&&cur.tg!=null&&Date.now()<deadline-60000;rep++){ let got=false; const vis=[]; let a=0; for(let k=1;k<=steps.length;k++){ if(k===steps.length||zAt(k)!==zAt(a)){ if(zAt(a)!=null) vis.push({a,b:k,z:zAt(a)}); a=k; } }
