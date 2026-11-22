@@ -28,7 +28,7 @@ var ROUTEBUILD=function(opt){
  const gray=L=>L<10?5:L<20?6:L<30?7:L<40?8:9; const need=totalXP(TGT,0);
  // ---- evaluation (incremental) ----
  let snaps=null, cur=null;
- let RO={}; const ro=o=>Object.assign(o,RO); const setRest=()=>{ const RS=ch.rested; if(!opt.tents||!RS||!RS.on){ RO={}; return; } const val=r=>(r.errs||0)*1e8+(r.tg!=null?r.tg:1e9-totalXP(r.L,r.xp)); const r=SIMX.runRested(steps,ch,{tgt:TGT}); let best={st:r.restStart||0,v:val(r)}; if(RO.restStart!=null&&RO.restStart!==best.st){ const H=(RS.hours||50)*3600; const r2=SIMX.run(steps,ch,{tgt:TGT,rested:RS,restStart:RO.restStart}); if(RO.restStart>=(r2.tg||r2.t)-H-60&&val(r2)<best.v) best={st:RO.restStart,v:val(r2)}; } RO={rested:RS,restStart:best.st}; };
+ let RO={}; const ro=o=>Object.assign(o,RO); const setRest=()=>{ const RS=ch.rested; if(!opt.tents||!RS||!RS.on){ RO={}; return; } const val=r=>(r.errs||0)*1e8+(r.tg!=null?r.tg:1e9-totalXP(r.L,r.xp)); const r=SIMX.runRested(steps,ch,{tgt:TGT,restScan:6}); let best={st:r.restStart||0,v:val(r)}; if(RO.restStart!=null&&RO.restStart!==best.st){ const H=(RS.hours||50)*3600; const r2=SIMX.run(steps,ch,{tgt:TGT,rested:RS,restStart:RO.restStart}); if(RO.restStart>=(r2.tg||r2.t)-H-60&&val(r2)<best.v) best={st:RO.restStart,v:val(r2)}; } RO={rested:RS,restStart:best.st}; };
  const full=()=>{ let r=SIMX.run(steps,ch,ro({snaps:true,tgt:TGT})); if(RO.restStart!=null&&RO.restStart<(r.tg||r.t)-(ch.rested.hours||50)*3600-60){ setRest(); r=SIMX.run(steps,ch,ro({snaps:true,tgt:TGT})); } /* tents must stay in the last N hours: refit when the route got shorter */ snaps=r.snaps; cur=meas(r); return cur; };
  const meas=r=>({t:r.t,tg:r.tg,errs:r.errs,L:r.L,tot:totalXP(r.L,r.xp)});
  const evalFrom=(st,k)=>{ const from=snaps[Math.min(k,snaps.length-1)]; const r=SIMX.run(st,ch,ro({from:{k,state:from},tgt:TGT,stopAtTgt:true})); return meas(r); };
@@ -108,7 +108,7 @@ var ROUTEBUILD=function(opt){
    log.push([vk,c.q||c.dg||(c.hub?'hub'+c.qs.length:'pk'),Math.round(cur.t/60),cur.L,cur.tg?Math.round(cur.tg/60):null]); } } };
  setRest(); full();
  const vks=opt.vks||[4,3,2.5,2,1.6,1.3,1,0.8,0.65,0.5,0.4,0.3,0.22,0.15,0.1,0.07,0.05,0.035,0.025,0.015];
- if(!opt.skipGrow) grow(vks,T0+(opt.growMs||MS));
+ if(!opt.skipGrow) grow(vks,Math.min(T0+MS,Date.now()+(opt.growMs||MS)));
  if(opt.fly) tryFly(); full(); const built={t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L};
  // ---- large-neighbourhood search: rip out a stretch, regrow it, keep it if the target comes sooner ----
  const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
