@@ -10,7 +10,7 @@
 var SIMX=(function(){
  let TR=null; let CUR={};
  const mxp=(a,b,c,d)=>Math.round(mobXP(a,b,c,d)*(PR.mobXp??1)); /* Forever's kill XP relative to the classic formula */
- const DEF={ trainSec:60, mobXp:1, dgLvl:0, dgMobXp:0.4, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
+ const DEF={ reach:0, trainSec:60, mobXp:1, dgLvl:0, dgMobXp:0.4, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
    detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, splitObjects:1,
    autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
@@ -106,7 +106,7 @@ var SIMX=(function(){
    let om=OC.get(g); if(!om){ om=new Map(); OC.set(g,om); } const okey=Math.round(s.pos.X/50)+','+Math.round(s.pos.Y/50); let order=om.get(okey);
    if(!order){ const left=pts.slice(); order=[]; let cur=s.pos; while(left.length){ let bi=0,bd=1e18; for(let i=0;i<left.length;i++){ const d=hyp(left[i],cur); if(d<bd){bd=d;bi=i;} } cur=left.splice(bi,1)[0]; order.push(cur); } om.set(okey,order); }
    const m=order.length, run=runSp(s); const w0=s.c.waitSec, t0=s.t; const killedAt=new Array(m).fill(-1e9); let done=0, i=0, inPull=0;
-   while(done<kills){ const k=i%m; const p=order[k]; const w=hyp(s.pos,p)/run; s.t+=w; s.c.walkSec+=w; s.pos=p; const ready=killedAt[k]+resp(p.id); if(ready>s.t){ const wt=ready-s.t; s.t+=wt; s.c.waitSec+=wt; }
+   while(done<kills){ const k=i%m; const p=order[k]; const w=Math.max(0,hyp(s.pos,p)-(p.t==='n'?PR.reach:0))/run; /* a mob is tagged from range: walk only to within reach of it */ s.t+=w; s.c.walkSec+=w; s.pos=p; const ready=killedAt[k]+resp(p.id); if(ready>s.t){ const wt=ready-s.t; s.t+=wt; s.c.waitSec+=wt; }
      const ml=p.lv!=null?Math.round(p.lv):s.L; const e=p.t==='n'&&elite(p.id); const ks=p.t==='o'?PR.interact/(PR.splitObjects?s.party:1):PR.perMob*(e?PR.eliteMul:1); s.t+=ks; if(p.t==='o') s.c.interacts++; else { s.c.kills++; s.c.killSec+=ks; }
      if(p.t==='n'){ inPull++; if(inPull>=PR.pullSize){ s.t+=PR.pullBase+PR.pullRest; s.c.pulls++; s.c.pullSec+=PR.pullBase; s.c.restSec+=PR.pullRest; inPull=0; } if(p.lv!=null&&fightable(s.L,ml)) gain(s,Math.round(mxp(s.L,ml,e,s.party)*(1+PR.food)),'xpKill'); }
      killedAt[k]=s.t; done+=onKill(p); i++; if(i>m*40) break; }
