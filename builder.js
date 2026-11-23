@@ -89,7 +89,7 @@ var ROUTEBUILD=function(opt){
      let curp=s, tour=0; const op=[]; for(const o of c.ob){ const x=near(o,curp); tour+=D(curp,x); op.push(x); curp=x; } const f=near(c.fp,curp); tour+=D(curp,f);
      const pieces=[{p:s,lv:c.r,steps:[{t:'accept',q:c.q}]}]; if(c.ob.length) pieces.push({p:op[op.length-1],lv:c.r,steps:[{t:'complete',q:c.q}]}); pieces.push({p:f,lv:c.r,steps:[{t:'turnin',q:c.q}]});
      const b=build(pieces,pts,lo); if(!b) continue; const L=Math.max(c.r,(pts[b.pc[b.pc.length-1][0]]||{L:1}).L||1); const xp=SIMX.questXP(c.q,L); if(xp<=0) continue;
-     let kills=0; for(const n of SIMX.needsOf(c.q,3)) kills+=n.k==='item'?n.rem/0.35:n.k==='kill'?n.rem:2;
+     let kills=0; for(const n of SIMX.needsOf(c.q,ch.party||3)) kills+=n.k==='item'?n.rem/0.35:n.k==='kill'?n.rem:2;
      const secs=(b.cost+tour*0.3)*1.15/runSpeed(L,3)+kills*12+20; C.push({q:c.q,b,xp,secs,v:xp/secs}); avail.push({c,s,op,f,lo,xp,secs:kills*12+tour*0.3*1.15/runSpeed(L,3)}); }
    if(opt.bundles!==false){ const hubs=new Map(); for(const a of avail){ const k=Math.round(a.s.X/120)+','+Math.round(a.s.Y/120)+','+cont(a.s.z); (hubs.get(k)||hubs.set(k,[]).get(k)).push(a); }
      for(const [hk,g] of hubs){ if(g.length<2||ban.has('H'+hk)) continue; g.sort((a,b)=>b.xp/b.secs-a.xp/a.secs); const mem=g.slice(0,opt.bundleMax||6); const lv=Math.max(...mem.map(a=>a.c.r)); const lo=Math.max(...mem.map(a=>a.lo));
@@ -100,7 +100,7 @@ var ROUTEBUILD=function(opt){
      for(const c of CELLS){ if(usedCell.has(c.k)) continue; const bx=Math.floor(c.p.X/BS), by=Math.floor(c.p.Y/BS); let nearL=null; for(let i=-1;i<=1&&nearL==null;i++) for(let j=-1;j<=1;j++){ const l=B.get((bx+i)+','+(by+j)); if(l&&l.length){ nearL=pts[l[l.length-1]].L; break; } } if(nearL==null) continue;
        const okN=L=>c.lv.reduce((a,ml)=>a+(L-ml<gray(L)&&ml<=L+2?1:0),0); if(okN(Math.max(nearL,c.hi-2))<(opt.pkMin||8)) continue;
        const b=build([{p:c.p,lv:Math.max(1,c.lo-2,zMin(c.p)),steps:[{t:'grind',pack:1,loc:c.loc,note:'Clear this area once (AoE pulls)'}]}],pts); if(!b) continue; const L=(pts[b.pc[0][0]]||{L:1}).L; const N=okN(L); if(N<(opt.pkMin||8)) continue;
-       const xp=N*mobXP(L,L,false,3); const secs=N*5+b.cost*1.15/runSpeed(L,3); C.push({cell:c.k,b,xp,secs,v:xp/(secs+5)}); } }
+       const xp=N*mobXP(L,L,false,ch.party||3); const secs=N*5+b.cost*1.15/runSpeed(L,3); C.push({cell:c.k,b,xp,secs,v:xp/(secs+5)}); } }
    for(const r of runs){ if(usedRun.has(r.grp||r.dg)||ban.has('R'+r.dg+':'+r.acc.length)) continue; const b=build(runPieces(r,inR),pts); if(!b) continue; C.push({dg:r.dg,grp:r.grp,nq:r.acc.length,b,xp:r.xp||5000,secs:(r.mins||20)*60,v:1e9}); }
    C.sort((a,b)=>b.v-a.v); const top=C.slice(0,K); let best=null; const cs=score(cur);
    for(const c of top){ const ns=apply(c.b.pc); let m, dd; try{ const e=evalH(ns,first(c.b.pc),Math.max(...c.b.pc.map(x=>x[0]))+1); m=e.m; dd=e.d; }catch(e){ if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); continue; } evals++; if(m.errs>cur.errs) continue; const sc=cs+dd; if(dd<-1&&(!best||sc<best.sc)) best={c,sc,ns}; }
