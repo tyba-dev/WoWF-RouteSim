@@ -18,16 +18,20 @@ const spellsAt=(list,lo,hi)=>(META.tsp.t[list]||[]).filter(s=>s[0]>lo&&s[0]<=hi)
 // positions and levels step by step
 const pos=[], lv=[]; const r=W.S.runRested(R.steps,R.char,{tgt:opt.tgt||60,onStep:(k,s)=>{ pos[k]=s.pos; lv[k]=s.L; }});
 const ins=new Map(); const add=(k,st)=>{ if(!ins.has(k)) ins.set(k,[]); ins.get(k).push(st); }; const log=[];
-for(const c of opt.classes){ const T=trainers(c.cls); if(!T.length){ log.push(c.cls+': no trainers'); continue; } let last=c.start??(R.char.level||1); const ms=new Set(c.milestones||[]);
-  const nearest=p=>{ let b=null,bd=1e18; for(const t of T){ if(!p||cont(t.loc.z)!==cont(p.z)) continue; const d=Math.hypot(t.p.X-p.X,t.p.Y-p.Y); if(d<bd){ bd=d; b=t; } } return b?{t:b,d:bd}:null; };
-  for(let k=0;k<R.steps.length;k++){ const L=lv[k]; if(L==null||L<=last) continue; const n=nearest(pos[k]); const pend=n?spellsAt(n.t.list,last,L):[];
-    const due=[...ms].some(m=>m>last&&m<=L); const near=n&&n.d<=(c.near||250);
-    if((near&&(pend.length>=(c.min||2)||due))||((L-last>=(c.overdue||4)||due)&&n)){
-      // overdue or a milestone with no trainer near: the cheapest point in the next few steps (shortest walk to a trainer)
-      let kk=k, best=n; if(!near){ for(let j=k;j<Math.min(R.steps.length,k+40);j++){ if(lv[j]!==L) break; const m=nearest(pos[j]); if(m&&m.d<best.d){ best=m; kk=j; } } }
-      const sp=spellsAt(best.t.list,last,L).map(s=>s[1]+(s[2]?' '+s[2].replace('Rank ','r'):''));
-      add(kk,{t:'train',cls:c.cls,loc:best.t.loc,text:'Train '+c.cls+' at '+best.t.name+(sp.length?': '+sp.slice(0,6).join(', ')+(sp.length>6?' and '+(sp.length-6)+' more':''):'')});
-      log.push(c.cls+' L'+L+' @'+kk+' '+best.t.name+(near?'':' (detour '+Math.round(best.d)+' yd)')); last=L; } } }
+// one pass over the route for all classes together: when one class has to train, every class with spells waiting and a
+// trainer near that one trains in the same stop (cities hold most trainers), so the group makes one visit, not several
+const CL=opt.classes.map(c=>({c,T:trainers(c.cls),last:c.start??(R.char.level||1),ms:new Set(c.milestones||[])})).filter(x=>{ if(!x.T.length) log.push(x.c.cls+': no trainers'); return x.T.length; });
+const nearestT=(T,p)=>{ let b=null,bd=1e18; for(const t of T){ if(!p||cont(t.loc.z)!==cont(p.z)) continue; const d=Math.hypot(t.p.X-p.X,t.p.Y-p.Y); if(d<bd){ bd=d; b=t; } } return b?{t:b,d:bd}:null; };
+for(let k=0;k<R.steps.length;k++){ const L=lv[k]; if(L==null) continue;
+  let lead=null; // the class that must train now, and where
+  for(const x of CL){ if(L<=x.last) continue; const n=nearestT(x.T,pos[k]); if(!n) continue; const pend=spellsAt(n.t.list,x.last,L); const due=[...x.ms].some(m=>m>x.last&&m<=L); const near=n.d<=(x.c.near||250);
+    if((near&&(pend.length>=(x.c.min||2)||due))||L-x.last>=(x.c.overdue||4)||due){ let kk=k, best=n; if(!near){ for(let j=k;j<Math.min(R.steps.length,k+40);j++){ if(lv[j]!==L) break; const m=nearestT(x.T,pos[j]); if(m&&m.d<best.d){ best=m; kk=j; } } } if(!lead||best.d<lead.best.d) lead={x,kk,best,near}; } }
+  if(!lead) continue; const at=lead.best.t.p, kk=lead.kk;
+  for(const x of CL){ if(L<=x.last) continue; const t=x===lead.x?lead.best.t:(()=>{ let b=null,bd=1e18; for(const t of x.T){ if(cont(t.loc.z)!==cont(at.z)) continue; const d=Math.hypot(t.p.X-at.X,t.p.Y-at.Y); if(d<bd){ bd=d; b=t; } } return bd<=(opt.sync||400)?b:null; })(); if(!t) continue;
+    const sp=spellsAt(t.list,x.last,L); if(!sp.length&&x!==lead.x) continue; const nm=sp.map(s=>s[1]+(s[2]?' '+s[2].replace('Rank ','r'):''));
+    add(kk,{t:'train',cls:x.c.cls,loc:t.loc,text:'Train '+x.c.cls+' at '+t.name+(nm.length?': '+nm.slice(0,6).join(', ')+(nm.length>6?' and '+(nm.length-6)+' more':''):'')});
+    log.push(x.c.cls+' L'+L+' @'+kk+' '+t.name+(x===lead.x&&!lead.near?' (detour '+Math.round(lead.best.d)+' yd)':'')); x.last=L; }
+  k=Math.max(k,kk); }
 const out=[]; let n=0; R.steps.forEach((s,k)=>{ out.push(s); for(const x of ins.get(k)||[]) out.push(Object.assign({id:'tr'+(n++)},x)); });
 R.steps=out; const r2=W.S.runRested(R.steps,R.char,{tgt:opt.tgt||60,err:true});
 fs.writeFileSync(OUT,JSON.stringify(O));
