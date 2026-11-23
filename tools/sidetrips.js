@@ -14,7 +14,10 @@ const C=W.P.ctx, META=vm.runInContext('META',C), Q=vm.runInContext('Q',C), plane
 const pos=[], lv=[], tt=[]; W.S.runRested(R.steps,R.char,{tgt:opt.tgt||60,onStep:(k,s)=>{ pos[k]=s.pos; lv[k]=s.L; tt[k]=s.t; }});
 const locOf=p=>{ const z=p&&plane2zone(p.X,p.Y); return z?{z:z.z,px:Math.round(z.px*10)/10,py:Math.round(z.py*10)/10}:null; };
 const ins=new Map(); const rep=[];
-for(const sd of opt.side){ const x0=Q(sd.qs[0]); const need=Math.max((x0.l||1)-(sd.lead||0),x0.r||1); const k=lv.findIndex(L=>L>=need); if(k<0){ rep.push(sd.who+': level '+need+' not reached'); continue; }
+const timeAt=(sd,k)=>{ const at=locOf(pos[k]); const steps=[]; if(at) steps.push({t:'travel',loc:at}); for(const q of sd.qs){ steps.push({t:'accept',q,cls:1},{t:'complete',q,cls:1},{t:'turnin',q,cls:1}); }
+  const ch=Object.assign({},R.char,{level:lv[k],xp:0,party:1,rested:Object.assign({},R.char.rested||{},{on:false})}); try{ return W.S.run(steps,ch,{err:true}).t; }catch(e){ return 1e9; } };
+for(const sd of opt.side){ const x0=Q(sd.qs[0]); const need=Math.max((x0.l||1)-(sd.lead||0),x0.r||1); let k=lv.findIndex(L=>L>=need); if(k<0){ rep.push(sd.who+': level '+need+' not reached'); continue; }
+  /* a flexible quest (window up to sd.upto): the point in the window where the trip is shortest */ if(sd.upto){ let best=null; for(let j=k;j<lv.length&&lv[j]<=sd.upto;j+=(sd.every||20)){ const t=timeAt(sd,j); if(!best||t<best.t) best={j,t}; } if(best) k=best.j; }
   // the trip for one player: the chain from the group's spot, then back to where the group will be
   const at=locOf(pos[k]); const steps=[]; if(at) steps.push({t:'travel',loc:at});
   for(const q of sd.qs){ steps.push({t:'accept',q,cls:1},{t:'complete',q,cls:1},{t:'turnin',q,cls:1}); }
