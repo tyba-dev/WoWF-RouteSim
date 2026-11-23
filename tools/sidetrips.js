@@ -12,7 +12,7 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'..','builder.js'),'utf8')+'
 W.P.ctx.ROUTEBLOCK(opt.block||[]); W.setParams(opt.params||{});
 const C=W.P.ctx, META=vm.runInContext('META',C), Q=vm.runInContext('Q',C), plane2zone=vm.runInContext('plane2zone',C);
 const pos=[], lv=[], tt=[]; W.S.runRested(R.steps,R.char,{tgt:opt.tgt||60,onStep:(k,s)=>{ pos[k]=s.pos; lv[k]=s.L; tt[k]=s.t; }});
-const locOf=p=>{ const z=p&&plane2zone(p.X,p.Y); return z?{z:z.z,px:Math.round(z.px*10)/10,py:Math.round(z.py*10)/10}:null; };
+const zp=vm.runInContext('zp2plane',C); /* the position in the zone the engine says we are in (zone boxes overlap) */ const locOf=p=>{ if(!p) return null; if(p.z!=null){ const a=zp(p.z,0,0), b=zp(p.z,100,100); return {z:p.z,px:Math.round((p.X-a.X)/(b.X-a.X)*1000)/10,py:Math.round((p.Y-a.Y)/(b.Y-a.Y)*1000)/10}; } const z=plane2zone(p.X,p.Y); return z?{z:z.z,px:Math.round(z.px*10)/10,py:Math.round(z.py*10)/10}:null; };
 const ins=new Map(); const rep=[];
 const timeAt=(sd,k)=>{ const at=locOf(pos[k]); const steps=[]; if(at) steps.push({t:'travel',loc:at}); for(const q of sd.qs){ steps.push({t:'accept',q,cls:1},{t:'complete',q,cls:1},{t:'turnin',q,cls:1}); }
   const ch=Object.assign({},R.char,{level:lv[k],xp:0,party:1,rested:Object.assign({},R.char.rested||{},{on:false})}); try{ return W.S.run(steps,ch,{err:true}).t; }catch(e){ return 1e9; } };
