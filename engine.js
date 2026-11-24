@@ -60,7 +60,7 @@ var SIMX=(function(){
  // ---------- the state ----------
  function newState(ch){ return {t:0,L:+ch.level||1,xp:+ch.xp||0,party:Math.max(1,+(ch.party||PR.party)),pos:null,log:new Map(),done:new Set(ch.doneQs||[]),fps:new Set([...(ch.fps||[]),...raceFps(ch.race)]),hsReady:0,bind:null,errs:0,
    c:{walkSec:0,walkYd:0,flySec:0,rideSec:0,talks:0,interacts:0,kills:0,pulls:0,killSec:0,pullSec:0,restSec:0,waitSec:0,wayKills:0,waySec:0,levelUps:0,fixedSec:0,runSec:0,xpQuest:0,xpKill:0,xpWay:0,xpRun:0,xpRest:0,tents:0,tentSec:0},rp:0,tentAt:null}; }
- function clone(s){ const log=new Map(); for(const [q,ns] of s.log) log.set(q,ns.map(n=>Object.assign({},n))); return {t:s.t,L:s.L,xp:s.xp,party:s.party,pos:s.pos,log,done:new Set(s.done),fps:new Set(s.fps),hsReady:s.hsReady,bind:s.bind,errs:s.errs,c:Object.assign({},s.c),rp:s.rp,tentAt:s.tentAt}; }
+ function clone(s){ const log=new Map(); for(const [q,ns] of s.log) log.set(q,ns.map(n=>Object.assign({},n))); return {t:s.t,L:s.L,xp:s.xp,party:s.party,pos:s.pos,log,done:new Set(s.done),fps:new Set(s.fps),hsReady:s.hsReady,bind:s.bind,errs:s.errs,c:Object.assign({},s.c),rp:s.rp,tentAt:s.tentAt,afterRun:s.afterRun}; }
  function gain(s,x,kind){ if(x<=0||s.L>=60) return; if(s.rp>0&&(kind==='xpKill'||kind==='xpWay')){ const b=Math.min(s.rp,x); s.rp-=b; s.c.xpRest+=b; x+=b; } s.c[kind]+=x; s.xp+=x; while(s.L<60&&s.xp>=XP_TABLE[s.L]){ s.xp-=XP_TABLE[s.L]; s.L++; s.c.levelUps++; s.t+=PR.levelUp; } if(s.L>=60){ s.L=60; s.xp=0; } }
  const runSp=s=>runSpeed(s.L,s.party);
  // ---------- moving ----------
@@ -114,20 +114,21 @@ var SIMX=(function(){
    if(TR) TR.push({q:CUR.q,k:CUR.k,item:CUR.item,pr:CUR.pr,kills,m,done,wait:Math.round(s.c.waitSec-w0),sec:Math.round(s.t-t0)});
    return done; }
  function doNeed(s,q,line,n){ if(n.rem<=0) return; CUR={q,k:n.k,item:n.item,pr:null};
-   if(n.k==='kill'){ const g=groundFor(q,line,'n',n.ids.map(id=>({t:'n',id})),s.pos,n.rem); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; }
+   if(n.k==='kill'){ const g=groundFor(q,line,'n',n.ids.map(id=>({t:'n',id})),s.pos,n.rem); if(!g){ if(!s.afterRun){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; } n.rem=0; return; }
      work(s,g,n.rem,p=>{ pool(s,q,p); return 1; }); n.rem=0; return; }
-   if(n.k==='item'){ let src=dropSources(n.item); if(src.filter(x=>x.t==='n').length>PR.bagSources){ n.rem=0; return; } /* carried from earlier kills (cloth for donations): no trip, as Polestar */ { const kn=src.filter(x=>x.p!=null); if(kn.length){ const mx=Math.max(...kn.map(x=>x.p)); src=kn.filter(x=>x.p>=mx*PR.dropKeep); } } /* hunt the mobs that drop it best */ if(!src.length){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; } let pr0=0,np0=0; for(const x of src){ pr0+=x.p!=null?x.p:PR.dropDefault; np0++; } const g=groundFor(q,line,'i',src,s.pos,Math.ceil(n.rem/Math.max(0.01,np0?pr0/np0:PR.dropDefault))); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; }
+   if(n.k==='item'){ let src=dropSources(n.item); if(src.filter(x=>x.t==='n').length>PR.bagSources){ n.rem=0; return; } /* carried from earlier kills (cloth for donations): no trip, as Polestar */ { const kn=src.filter(x=>x.p!=null); if(kn.length){ const mx=Math.max(...kn.map(x=>x.p)); src=kn.filter(x=>x.p>=mx*PR.dropKeep); } } /* hunt the mobs that drop it best */ if(!src.length){ if(!s.afterRun){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; } n.rem=0; return; } let pr0=0,np0=0; for(const x of src){ pr0+=x.p!=null?x.p:PR.dropDefault; np0++; } const g=groundFor(q,line,'i',src,s.pos,Math.ceil(n.rem/Math.max(0.01,np0?pr0/np0:PR.dropDefault))); if(!g){ if(!s.afterRun){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; } n.rem=0; return; }
      // expected kills: items needed over the ground's mean drop chance
      let pp=0,np=0; for(const p of g.pts){ pp+=p.p!=null?p.p:PR.dropDefault; np++; } const pr=Math.max(0.01,np?pp/np:PR.dropDefault); let acc=0; CUR.pr=pr; CUR.rem=n.rem;
      work(s,g,Math.ceil(n.rem/pr),p=>{ pool(s,q,p); acc+=pr; return 1; }); n.rem=0; return; }
-   if(n.k==='object'){ const g=groundFor(q,line,'o',n.ids.map(id=>({t:'o',id,p:1})),s.pos,n.rem); if(!g){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; n.rem=0; return; } work(s,g,n.rem,()=>1); n.rem=0; return; }
+   if(n.k==='object'){ const g=groundFor(q,line,'o',n.ids.map(id=>({t:'o',id,p:1})),s.pos,n.rem); if(!g){ if(!s.afterRun){ s.t+=PR.unresolvedSec; s.c.fixedSec+=PR.unresolvedSec; } n.rem=0; return; } work(s,g,n.rem,()=>1); n.rem=0; return; }
    if(n.k==='talk'){ const pts=[]; for(const id of n.ids) pts.push(...entPts('n',id)); const p=nearest(pts,s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++; n.rem=0; return; }
-   s.t+=PR.eventSec; s.c.fixedSec+=PR.eventSec; n.rem=0; }
+   if(!s.afterRun){ s.t+=PR.eventSec; s.c.fixedSec+=PR.eventSec; } n.rem=0; }
  // pooled credit: a kill also counts for other open quests' kill objectives on that mob, and their drops from it
  function pool(s,q0,p){ if(p.t!=='n') return; for(const [q,ns] of s.log){ if(q===q0) continue; for(const n of ns){ if(n.rem<=0) continue; if(n.k==='kill'&&n.ids.includes(p.id)) n.rem-=1; else if(n.k==='item'){ const d=EXTRA.drops[n.item]; const c=d&&d.n[p.id]; if(c!=null) n.rem-=c/100; } } } }
  // ---------- steps ----------
  function stepPt(s,st){ if(st.loc) return zp2plane(st.loc.z,st.loc.px,st.loc.py); return null; }
  function play(s,st,R){ const t0=s.t; const L0=s.L; let err=null;
+   /* objectives inside a dungeon: completes and pick-ups right after its run are covered by the run */ if(st.t!=='complete'&&st.t!=='accept') s.afterRun=0;
    if(+st.tsec>=0&&st.tsec!==''&&st.tsec!=null){ const p=stepPt(s,st); if(p) s.pos=p; s.t+=+st.tsec; s.c.fixedSec+=+st.tsec; return; }
    if(st.inRun){ if(st.q&&s.log.has(st.q)) for(const n of s.log.get(st.q)) n.rem=0; return; }
    switch(st.t){
@@ -138,7 +139,7 @@ var SIMX=(function(){
     case 'turnin':{ const q=st.q; if(s.done.has(q)) break; if(!s.log.has(q)){ s.log.set(q,needsOf(q,st.cls?1:s.party)); R.soft++; } const ns=s.log.get(q); for(const [i,n] of ns.entries()) if(n.rem>0) doNeed(s,q,i+1,n); let fpts=finisherPts(q); if(st.cls&&s.pos){ const m=cont(s.pos); fpts=fpts.filter(p=>cont(p)===m); } /* a class quest: the data also lists the other faction's spirit or trainer */ const p=nearest(fpts,s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++;
       s.log.delete(q); s.done.add(q); if(!st.cls) gain(s,st.xpo!=null&&R.useXpo?+st.xpo:questXP(q,s.L),'xpQuest'); /* a class quest: one player's XP, not the group's */ break; }
     case 'train':{ const p=stepPt(s,st); if(p) move(s,p); s.t+=PR.trainSec; s.c.trains=(s.c.trains||0)+1; s.c.trainSec=(s.c.trainSec||0)+PR.trainSec; break; }
-    case 'grind':{ if(st.mode==='run'){ const p=stepPt(s,st); if(p) move(s,p); const lvR=+st.lv||0; /* a run over its level clears faster (dgLvl per level, 0.6x to 1.5x) and its mobs give less */ const f=lvR&&PR.dgLvl?Math.min(1.5,Math.max(0.6,1-PR.dgLvl*(s.L-lvR))):1; const sec=(+st.mins||0)*60*f; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,lvR||s.L,s.party)*mxp(s.L,lvR||s.L,false,s.party)*DG_RUN_XP*(PR.dgMobXp??1)); /* dungeon trash gives little: runs are for their quests */ gain(s,x,'xpRun'); break; }
+    case 'grind':{ if(st.mode==='run'){ s.afterRun=1; const p=stepPt(s,st); if(p) move(s,p); const lvR=+st.lv||0; /* a run over its level clears faster (dgLvl per level, 0.6x to 1.5x) and its mobs give less */ const f=lvR&&PR.dgLvl?Math.min(1.5,Math.max(0.6,1-PR.dgLvl*(s.L-lvR))):1; const sec=(+st.mins||0)*60*f; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,lvR||s.L,s.party)*mxp(s.L,lvR||s.L,false,s.party)*DG_RUN_XP*(PR.dgMobXp??1)); /* dungeon trash gives little: runs are for their quests */ gain(s,x,'xpRun'); break; }
       if(st.pack&&st.loc){ const c=stepPt(s,st); const C=+META.mobl.c; const cx=Math.floor(c.X/C), cy=Math.floor(c.Y/C); const ms=spawnsIn(cx*C,(cx+1)*C,cy*C,(cy+1)*C).filter(m=>fightable(s.L,Math.round(m.lv))).map(m=>({X:m.X,Y:m.Y,z:c.z,id:m.id,t:'n',lv:m.lv})); if(ms.length) work(s,{pts:ms,center:c},ms.length,()=>1); break; }
       if(+st.amount>0&&!(+st.xph>0)){ if(s.L>=60) break; if(st.extra&&st.note){ const key='g:'+st.note; if(s.done.has(key)) break; s.done.add(key); } const p=stepPt(s,st); if(p) move(s,p); const xps=mxp(s.L,s.L,false,s.party)*(1+PR.food)/killSecs(s.L,s.L,s.party); const sec=+st.amount/Math.max(0.01,xps); s.t+=sec; s.c.killSec+=sec; gain(s,+st.amount,'xpKill'); break; }
       if(+st.amount>0&&+st.xph>0){ const p=stepPt(s,st); if(p) move(s,p); const sec=+st.amount/(+st.xph)*3600; s.t+=sec; s.c.fixedSec+=sec; gain(s,+st.amount,'xpKill'); } break; }
