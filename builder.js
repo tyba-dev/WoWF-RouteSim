@@ -116,7 +116,7 @@ var ROUTEBUILD=function(opt){
  if(!opt.skipGrow) grow(vks,Math.min(T0+MS,Date.now()+(opt.growMs||MS)));
  if(opt.fly) tryFly(); full(); const built={t:Math.round(cur.t/60),tg:cur.tg?Math.round(cur.tg/60):null,errs:cur.errs,L:cur.L};
  // ---- large-neighbourhood search: rip out a stretch, regrow it, keep it if the target comes sooner ----
- const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); const prot=s=>s.chain||s.cls||s.t==='train'||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
+ const lnsLog=[]; const fv=opt.finalVk||0.05; const fin=m=>scoreV(m,fv); /* blk: a dungeon's pick-ups, run, completes and hand-ins placed as one unit (they stay put and together) */ const prot=s=>s.chain||s.cls||s.blk||s.t==='train'||s.mode==='run'||s.inRun||(s.t==='travel'&&!s.auto);
  const deadline=T0+MS; let it=0; let seed=opt.seedRng||12345; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
  const RLV=new Map(); for(const [dg,lv] of Object.entries(opt.dgLv||{})) RLV.set('d:'+dg,lv); const tolUp=opt.lvTolUp??tol; for(const r of runs){ if(r.dg) RLV.set('d:'+r.dg,r.lv||1); for(const st of (r.steps||[])) if(st.t==='custom'&&st.name) RLV.set('c:'+st.name,r.lv||1); }
  const runLow=()=>{ let n=0; steps.forEach((s,k)=>{ const key=s.mode==='run'&&s.dg?'d:'+s.dg:s.t==='custom'&&s.act==='accept'?'c:'+s.name:null; const lv=key&&RLV.get(key); if(lv&&snaps[k]&&snaps[k].L<lv-tol) n+=lv-tol-snaps[k].L; if(lv&&snaps[k]&&snaps[k].L>lv+tolUp) n+=snaps[k].L-lv-tolUp; }); return n; };
@@ -151,7 +151,7 @@ var ROUTEBUILD=function(opt){
      if(opt.progress) opt.progress({visits:pass,acc:nV,tg:Math.round(cur.tg/60)}); }
    // run moves: move a dungeon run (with the objective steps right after it) to any point in its level window, scored as target time + 2 h per level outside the window
    if(opt.runMove&&cur.tg!=null){ let nR=0; const comp=()=>cur.tg+7200*runLow();
-     for(const rk of steps.map((s,k)=>s.mode==='run'&&s.dg&&RLV.has('d:'+s.dg)?s.id:null).filter(Boolean)){ if(Date.now()>deadline-60000) break; const a=steps.findIndex(s=>s.id===rk); if(a<0) continue; let b=a+1; while(b<steps.length&&steps[b].t==='complete') b++; const blk=steps.slice(a,b); const lv=RLV.get('d:'+steps[a].dg);
+     for(const rk of steps.map((s,k)=>s.mode==='run'&&!s.blk&&s.dg&&RLV.has('d:'+s.dg)?s.id:null).filter(Boolean)){ if(Date.now()>deadline-60000) break; const a=steps.findIndex(s=>s.id===rk); if(a<0) continue; let b=a+1; while(b<steps.length&&steps[b].t==='complete') b++; const blk=steps.slice(a,b); const lv=RLV.get('d:'+steps[a].dg);
        const rest=steps.slice(0,a).concat(steps.slice(b)); const c0=comp(), e0=cur.errs; let best=null;
        const cands=[]; for(let k=0;k<=rest.length;k++){ const sn=snaps[k<a?k:k+(b-a)]; if(!sn) continue; if(sn.L<lv-tol||sn.L>lv+tolUp) continue; if(k%12===0||(rest[k-1]&&rest[k-1].t==='travel')) cands.push(k); }
        for(const k of cands){ const ns=rest.slice(0,k).concat(blk,rest.slice(k)); let m; try{ m=evalFrom(ns,Math.min(a,k)); }catch(e){ continue; } evals++; if(m.errs>cur.errs||m.tg==null) continue; if(!best||m.tg<best.tg) best={k,tg:m.tg,ns}; }
