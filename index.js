@@ -5,6 +5,7 @@ const planner=require('./planner.js');
 function open(opts={}){ const P=planner.load(); const D=path.join(__dirname,'data');
   P.ctx.EXTRA=JSON.parse(fs.readFileSync(path.join(D,'extra.json'),'utf8'));
   P.ctx.QXP=fs.existsSync(path.join(D,'pxp.json'))?JSON.parse(fs.readFileSync(path.join(D,'pxp.json'),'utf8')):{};
+  /* elite and group quests (Polestar quest type 1): the group can take these on only closer to their level */ P.ctx.ELITE=new Set(fs.existsSync(path.join(D,'elite.json'))?JSON.parse(fs.readFileSync(path.join(D,'elite.json'),'utf8')):[]);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'engine.js'),'utf8')+'\n;globalThis.SIMX=SIMX;',P.ctx,{filename:'engine.js'});
   const S=P.ctx.SIMX;
   // a route for the planner's helpers (faction, race flight paths, character settings)

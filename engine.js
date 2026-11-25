@@ -12,7 +12,7 @@ var SIMX=(function(){
  const mxp=(a,b,c,d)=>Math.round(mobXP(a,b,c,d)*(PR.mobXp??1)); /* Forever's kill XP relative to the classic formula */
  const DEF={ layers:1, layerHop:5, reach:0, aoeLevel:0, lowPerMob:6, lowPullSize:2, lowPullBase:4, lowPullRest:8, trainSec:60, mobXp:1, dgLvl:0, dgMobXp:0.4, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
-   detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, dropFallback:1, splitObjects:1,
+   detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, dropFallback:1, questAbove:4, eliteAbove:2, splitObjects:1,
    autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
@@ -127,7 +127,8 @@ var SIMX=(function(){
  function pool(s,q0,p){ if(p.t!=='n') return; for(const [q,ns] of s.log){ if(q===q0) continue; for(const n of ns){ if(n.rem<=0) continue; if(n.k==='kill'&&n.ids.includes(p.id)) n.rem-=1; else if(n.k==='item'){ const d=EXTRA.drops[n.item]; const c=d&&d.n[p.id]; if(c!=null) n.rem-=c/100; } } } }
  // ---------- steps ----------
  function stepPt(s,st){ if(st.loc) return zp2plane(st.loc.z,st.loc.px,st.loc.py); return null; }
- function play(s,st,R){ const t0=s.t; const L0=s.L; let err=null;
+ /* how far above the group's level a quest can be done: normal quests +4, elite or group quests +2 (dungeon quests keep their windows) */ const overLv=(s,st,x)=>{ if(st.dgq||!x||!x.l) return false; const up=(typeof ELITE!=='undefined'&&ELITE.has(st.q))?PR.eliteAbove:PR.questAbove; return up!=null&&x.l>s.L+up; };
+function play(s,st,R){ const t0=s.t; const L0=s.L; let err=null;
    /* objectives inside a dungeon: completes and pick-ups right after its run are covered by the run */ if(st.t!=='complete'&&st.t!=='accept') s.afterRun=0;
    if(+st.tsec>=0&&st.tsec!==''&&st.tsec!=null){ const p=stepPt(s,st); if(p) s.pos=p; s.t+=+st.tsec; s.c.fixedSec+=+st.tsec; return; }
    if(st.inRun){ if(st.q&&s.log.has(st.q)) for(const n of s.log.get(st.q)) n.rem=0; return; }
@@ -135,8 +136,8 @@ var SIMX=(function(){
     case 'accept':{ const q=st.q, x=Q(q); if(!x){ err='unknown'; break; } if(s.log.has(q)||s.done.has(q)) break;
       if((x.ps||[]).length&&!(x.ps||[]).some(p=>s.done.has(p))) err='prereq'; if((x.pg||[]).some(p=>!s.done.has(p))) err='prereq'; if(s.L<(x.r||1)) err='level';
       const p=nearest(starterPts(q),s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++; if(PR.logCap&&s.log.size>=PR.logCap) err='log full'; s.log.set(q,needsOf(q,st.cls?1:s.party)); if(s.log.size>(s.c.logPeak||0)) s.c.logPeak=s.log.size; break; }
-    case 'complete':{ const q=st.q; if(!s.log.has(q)&&!s.done.has(q)){ s.log.set(q,needsOf(q,st.cls?1:s.party)); R.soft++; } const ns=s.log.get(q); if(!ns) break; ns.forEach((n,i)=>{ if(st.obj&&n.line!=null&&n.line!==st.obj) return; doNeed(s,q,i+1,n); }); break; }
-    case 'turnin':{ const q=st.q; if(s.done.has(q)) break; /* a dungeon quest's objectives are inside: its run comes first */ if(st.dgq&&!(s.ranDg&&s.ranDg.has(st.dgq))){ err='dungeon not run'; break; } if(!s.log.has(q)){ s.log.set(q,needsOf(q,st.cls?1:s.party)); R.soft++; } const ns=s.log.get(q); for(const [i,n] of ns.entries()) if(n.rem>0) doNeed(s,q,i+1,n); let fpts=finisherPts(q); if(st.cls&&s.pos){ const m=cont(s.pos); fpts=fpts.filter(p=>cont(p)===m); } /* a class quest: the data also lists the other faction's spirit or trainer */ const p=nearest(fpts,s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++;
+    case 'complete':{ const q=st.q; if(!s.done.has(q)&&overLv(s,st,Q(q))){ err='over level'; break; } if(!s.log.has(q)&&!s.done.has(q)){ s.log.set(q,needsOf(q,st.cls?1:s.party)); R.soft++; } const ns=s.log.get(q); if(!ns) break; ns.forEach((n,i)=>{ if(st.obj&&n.line!=null&&n.line!==st.obj) return; doNeed(s,q,i+1,n); }); break; }
+    case 'turnin':{ const q=st.q; if(s.done.has(q)) break; if(overLv(s,st,Q(q))){ err='over level'; break; } /* a dungeon quest's objectives are inside: its run comes first */ if(st.dgq&&!(s.ranDg&&s.ranDg.has(st.dgq))){ err='dungeon not run'; break; } if(!s.log.has(q)){ s.log.set(q,needsOf(q,st.cls?1:s.party)); R.soft++; } const ns=s.log.get(q); for(const [i,n] of ns.entries()) if(n.rem>0) doNeed(s,q,i+1,n); let fpts=finisherPts(q); if(st.cls&&s.pos){ const m=cont(s.pos); fpts=fpts.filter(p=>cont(p)===m); } /* a class quest: the data also lists the other faction's spirit or trainer */ const p=nearest(fpts,s.pos); if(p) move(s,p); s.t+=PR.talk; s.c.talks++;
       s.log.delete(q); s.done.add(q); if(!st.cls) gain(s,st.xpo!=null&&R.useXpo?+st.xpo:questXP(q,s.L),'xpQuest'); /* a class quest: one player's XP, not the group's */ break; }
     case 'train':{ const p=stepPt(s,st); if(p) move(s,p); s.t+=PR.trainSec; s.c.trains=(s.c.trains||0)+1; s.c.trainSec=(s.c.trainSec||0)+PR.trainSec; break; }
     case 'grind':{ if(st.mode==='run'){ s.afterRun=1; if(st.dg){ s.ranDg=new Set(s.ranDg||[]); s.ranDg.add(st.dg); } const p=stepPt(s,st); if(p) move(s,p); const lvR=+st.lv||0; /* a run over its level clears faster (dgLvl per level, 0.6x to 1.5x) and its mobs give less */ const f=lvR&&PR.dgLvl?Math.min(1.5,Math.max(0.6,1-PR.dgLvl*(s.L-lvR))):1; const sec=(+st.mins||0)*60*f; s.t+=sec; s.c.runSec+=sec; const x=st.xpo!=null?+st.xpo:Math.round(sec/killSecs(s.L,lvR||s.L,s.party)*mxp(s.L,lvR||s.L,false,s.party)*DG_RUN_XP*(PR.dgMobXp??1)); /* dungeon trash gives little: runs are for their quests */ gain(s,x,'xpRun'); break; }
