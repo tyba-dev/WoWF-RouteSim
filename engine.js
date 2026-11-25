@@ -127,7 +127,7 @@ var SIMX=(function(){
  function pool(s,q0,p){ if(p.t!=='n') return; for(const [q,ns] of s.log){ if(q===q0) continue; for(const n of ns){ if(n.rem<=0) continue; if(n.k==='kill'&&n.ids.includes(p.id)) n.rem-=1; else if(n.k==='item'){ const d=EXTRA.drops[n.item]; const c=d&&d.n[p.id]; if(c!=null) n.rem-=c/100; } } } }
  // ---------- steps ----------
  function stepPt(s,st){ if(st.loc) return zp2plane(st.loc.z,st.loc.px,st.loc.py); return null; }
- /* how far above the group's level a quest can be done: normal quests +4, elite or group quests +2 (dungeon quests keep their windows) */ const overLv=(s,st,x)=>{ if(st.dgq||!x||!x.l) return false; const up=(typeof ELITE!=='undefined'&&ELITE.has(st.q))?PR.eliteAbove:PR.questAbove; return up!=null&&x.l>s.L+up; };
+ /* how far above the group's level a quest can be done: normal quests +4, elite or group quests +2 (dungeon quests keep their windows) */ const overLv=(s,st,x)=>{ if(st.dgq||!x||!x.l) return false; /* cloth donations are turn-ins with no fighting, so the level gap carries no risk */ if(/^A Donation of /.test(x.n||'')) return false; const up=(typeof ELITE!=='undefined'&&ELITE.has(st.q))?PR.eliteAbove:PR.questAbove; return up!=null&&x.l>s.L+up; };
 function play(s,st,R){ const t0=s.t; const L0=s.L; let err=null;
    /* objectives inside a dungeon: completes and pick-ups right after its run are covered by the run */ if(st.t!=='complete'&&st.t!=='accept') s.afterRun=0;
    if(+st.tsec>=0&&st.tsec!==''&&st.tsec!=null){ const p=stepPt(s,st); if(p) s.pos=p; s.t+=+st.tsec; s.c.fixedSec+=+st.tsec; return; }
