@@ -12,7 +12,7 @@ var SIMX=(function(){
  const mxp=(a,b,c,d)=>Math.round(mobXP(a,b,c,d)*(PR.mobXp??1)); /* Forever's kill XP relative to the classic formula */
  const DEF={ layers:1, layerHop:5, reach:0, aoeLevel:0, lowPerMob:6, lowPullSize:2, lowPullBase:4, lowPullRest:8, trainSec:60, mobXp:1, dgLvl:0, dgMobXp:0.4, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
-   detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, dropFallback:1, questAbove:4, eliteAbove:2, splitObjects:1,
+   detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, dropFallback:1, lootShare:0, questAbove:4, eliteAbove:2, splitObjects:1,
    autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
@@ -28,12 +28,12 @@ var SIMX=(function(){
  function questXP(q,L){ if(L>=60) return 0; const e=EXTRA.quests[q]; const base=(e&&e.xp)||(QXP&&QXP[q]&&QXP[q][0])||0; if(!base) return 0; const ql=(e&&e.l)||(Q(q)&&Q(q).l)||L; const over=L-ql; const m=over<=5?1:over===6?0.8:over===7?0.6:0.5; return rnd(base*m); }
  // ---------- objectives: what a quest needs, per group ----------
  function needsOf(q,party){ const out=[]; const fo=EXTRA.objs[q]; const x=Q(q)||{}; const o=x.o||{};
-   if(fo&&fo.length){ for(const r of fo){ if(r.k==='kill') out.push({k:'kill',ids:[r.id],c:r.c,rem:r.c}); else if(r.k==='item'){ const per=r.c>1?party:1; out.push({k:'item',item:r.id,c:r.c,rem:r.c*per}); } else if(r.k==='object') out.push({k:'object',ids:[r.id],c:r.c,rem:r.c}); else if(r.k==='talk') out.push({k:'talk',ids:[r.id],c:1,rem:1}); else if(r.k==='event') out.push({k:'event',c:1,rem:1,line:r.n}); }
+   if(fo&&fo.length){ for(const r of fo){ if(r.k==='kill') out.push({k:'kill',ids:[r.id],c:r.c,rem:r.c}); else if(r.k==='item'){ /* lootShare 1: a quest item that drops can be looted by every member who has the quest, so the group needs the count once */ const per=(r.c>1&&!PR.lootShare)?party:1; out.push({k:'item',item:r.id,c:r.c,rem:r.c*per}); } else if(r.k==='object') out.push({k:'object',ids:[r.id],c:r.c,rem:r.c}); else if(r.k==='talk') out.push({k:'talk',ids:[r.id],c:1,rem:1}); else if(r.k==='event') out.push({k:'event',c:1,rem:1,line:r.n}); }
      // kill objectives of a group of mobs (o.k) are not in Forever's list under one id: take them from the quest data
      for(const [ids,base] of o.k||[]){ const all=base?[base,...ids]:ids; if(!out.some(n=>n.k==='kill'&&all.includes(n.ids[0]))) out.push({k:'kill',ids:all,c:PR.objDefault,rem:PR.objDefault}); }
      return out; }
    for(const [id] of o.c||[]) out.push({k:'kill',ids:[id],c:PR.objDefault,rem:PR.objDefault});
-   for(const [id] of o.i||[]) out.push({k:'item',item:id,c:PR.objDefault,rem:PR.objDefault*party});
+   for(const [id] of o.i||[]) out.push({k:'item',item:id,c:PR.objDefault,rem:PR.objDefault*(PR.lootShare?1:party)});
    for(const [id] of o.o||[]) out.push({k:'object',ids:[id],c:1,rem:1});
    for(const [ids,base] of o.k||[]) out.push({k:'kill',ids:base?[base,...ids]:ids,c:PR.objDefault,rem:PR.objDefault});
    return out; }
