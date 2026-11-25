@@ -5,3 +5,4 @@
 - **CMaNGOS classic-db** creature respawn times (`data/extra.json`), GPL-2.0-compatible data.
 - **Forever Route Planner** (https://github.com/tyba-dev/wowf-qrp), GPL-3.0: world data, walking grid, helpers.
 - Quest XP table (`data/pxp.json`) from Polestar forever-db (CC BY 4.0).
+- Elite and group quest ids (`data/elite.json`, quest type 1) from Polestar forever-db (CC BY 4.0).
