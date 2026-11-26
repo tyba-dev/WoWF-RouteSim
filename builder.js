@@ -67,6 +67,7 @@ var ROUTEBUILD=function(opt){
      const dep=nearestNode(a,fps), arr=nearestNode(b,fps); if(!dep||!arr||dep===arr) return; const P=taxiPt(dep), Q2=taxiPt(arr); if(!P||!Q2) return; const run=runSpeed(snaps[k].L,3);
      const walk=d*1.25/run, fr=flightRoute(dep,arr); const fly=Math.hypot(P.X-a.X,P.Y-a.Y)*1.25/run+((fr&&fr.secs)||Math.hypot(Q2.X-P.X,Q2.Y-P.Y)/30)+20+Math.hypot(b.X-Q2.X,b.Y-Q2.Y)*1.25/run; if(fly<walk-30) ins.push([k,{t:'travel',kind:'fly',node:arr,text:taxiShort(arr),auto:1}]); });
    for(let i=ins.length-1;i>=0;i--){ const [k,st]=ins[i]; steps.splice(k,0,{id:uid(),...st}); } full(); if(cur.errs<=svCur.errs&&score(cur)<score(svCur)) flyAcc++; else { steps=sv; full(); } };
+ const TB=new Map(), tbk=c=>c.q?"q"+c.q:c.cell?"c"+c.cell:c.hub?"h"+c.hub:"r"+c.dg+":"+c.nq;
  const grow=(vks,deadline)=>{ for(const vk of vks){ VK=vk;
   for(;;){ if(Date.now()>deadline) return; rounds++;
    const pts=ptsNow(); const inR=new Set(steps.filter(s=>s.q).map(s=>s.q)); const tiAt=new Map(); steps.forEach((s,k)=>{ if(s.t==='turnin') tiAt.set(s.q,k); });
@@ -102,8 +103,9 @@ var ROUTEBUILD=function(opt){
        const b=build([{p:c.p,lv:Math.max(1,c.lo-2,zMin(c.p)),steps:[{t:'grind',pack:1,loc:c.loc,note:'Clear this area once (AoE pulls)'}]}],pts); if(!b) continue; const L=(pts[b.pc[0][0]]||{L:1}).L; const N=okN(L); if(N<(opt.pkMin||8)) continue;
        const xp=N*mobXP(L,L,false,ch.party||3); const secs=N*5+b.cost*1.15/runSpeed(L,3); C.push({cell:c.k,b,xp,secs,v:xp/(secs+5)}); } }
    for(const r of runs){ if(usedRun.has(r.grp||r.dg)||ban.has('R'+r.dg+':'+r.acc.length)) continue; const b=build(runPieces(r,inR),pts); if(!b) continue; C.push({dg:r.dg,grp:r.grp,nq:r.acc.length,b,xp:r.xp||5000,secs:(r.mins||20)*60,v:1e9}); }
-   C.sort((a,b)=>b.v-a.v); const top=C.slice(0,K); let best=null; const cs=score(cur);
-   for(const c of top){ const ns=apply(c.b.pc); let m, dd; try{ const e=evalH(ns,first(c.b.pc),Math.max(...c.b.pc.map(x=>x[0]))+1); m=e.m; dd=e.d; }catch(e){ if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); continue; } evals++; if(m.errs>cur.errs) continue; const sc=cs+dd; if(dd<-1&&(!best||sc<best.sc)) best={c,sc,ns}; }
+   C.sort((a,b)=>b.v-a.v); const top=C.filter(c=>TB.get(tbk(c))!==cur.L+"|"+vk).slice(0,K); let best=null; const cs=score(cur);
+   for(const c of top){ const ns=apply(c.b.pc); let m, dd; try{ const e=evalH(ns,first(c.b.pc),Math.max(...c.b.pc.map(x=>x[0]))+1); m=e.m; dd=e.d; }catch(e){ if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); continue; } evals++; if(opt.dbg) opt.dbg.push([vk,c.q||c.cell||c.dg||('hub'+c.hub),Math.round(c.v*1000)/1000,m.errs-cur.errs,Math.round(dd),m.L]); if(m.errs>cur.errs||dd>=-1){ TB.set(tbk(c),cur.L+"|"+vk); continue; } /* no use at this level: keep it out of the top K until the level changes, so it cannot crowd out the rest */ const sc=cs+dd; if(!best||sc<best.sc) best={c,sc,ns}; }
+   if(opt.dbg) opt.dbg.push(['round',vk,'C',C.length,'pool',pool.filter(c=>!inR.has(c.q)&&!ban.has(c.q)).length,'best',best?Math.round(best.sc-cs):null]);
    if(!best) break;
    const sv=steps, svCur=cur; steps=best.ns; full(); const c=best.c;
    if(cur.errs>svCur.errs||score(cur)>=cs){ steps=sv; full(); if(c.q) ban.add(c.q); else if(c.cell) usedCell.add(c.cell); else if(c.hub) ban.add('H'+c.hub); else ban.add('R'+c.dg+':'+c.nq); nFail++; continue; }
