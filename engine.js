@@ -13,7 +13,7 @@ var SIMX=(function(){
  const DEF={ layers:1, layerHop:5, reach:0, aoeLevel:0, lowPerMob:6, lowPullSize:2, lowPullBase:4, lowPullRest:8, trainSec:60, mobXp:1, dgLvl:0, dgMobXp:0.4, talk:6, interact:8, pullSize:6, pullBase:4, perMob:2, pullRest:6, eliteMul:3.5, levelUp:20, flyOver:20, flySpeed:30, respawn:300, respawnMax:600,
    aggro:20, mobUp:2, groundR:250, groundMax:900, groundFill:0.6, dropDefault:0.35, objDefault:8, eventSec:120, unresolvedSec:120, wayKills:1, food:0.03, mountLevel:40, hearthCast:10, hearthCd:3600,
    detour:1.0, alongCredit:1, logCap:0, party:3, dropKeep:0.5, bagSources:20, dropFallback:1, lootShare:0, splitDrops:0, noRespawn:0, staticResp:0, minSpawn:0, minSpread:15, soloPerMob:8, questAbove:4, eliteAbove:2, splitObjects:1,
-   autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3 };
+   autoFly:0, flyFirstOnly:1, autoHs:0, hsMinSec:180, hsGain:120, autoBind:0, autoBindYd:200, flyMinSec:90, autoFp:0, autoFpYd:150, flyNear:3, autoPortal:0, portalLevel:40, portalCast:10, portalGain:120, portalNodes:{'352':0,'1573':0,'3838':60} };
  let PR=Object.assign({},DEF);
  const cont=p=>p&&META.zones[p.z]?.m;
  const hyp=(a,b)=>Math.hypot(a.X-b.X,a.Y-b.Y);
@@ -83,7 +83,7 @@ var SIMX=(function(){
    for(const x of xs) for(const y of ys){ if(!x&&!y) continue; const c=pre(x)+wsec(x?x.p:a,y?y.p:to,run)+post(y); if(c<direct&&(!best||c<best.c)){ const legs=[]; if(x) legs.push([d0,x]); if(y) legs.push([y,d1]); best={c,legs,x,y}; } }
    return best; }
  function learnNear(s,p){ if(!PR.autoFp||!p) return; for(const n of tnodes()){ if(s.fps.has(n.id)||n.m!==cont(p)||n.zmin>s.L) continue; const d=hyp(n.p,p); if(d>PR.autoFpYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoFp=(s.c.autoFp||0)+1; s.fps.add(n.id); if(FL) FL.push({k:CK,m:CM,kind:'fp',node:n.id}); } }
- function walkTo(s,a,to,run,sec){ s.t+=sec; s.c.walkSec+=sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
+ function walkTo(s,a,to,run,sec){ s.t+=sec; s.c.walkSec+=sec; s.c.moveSec=(s.c.moveSec||0)+sec; s.c.walkYd+=sec*run; wayKill(s,a,to); s.pos=to; }
  // inns (innkeepers of the faction) for binding
  let INN=null, INNfac=null; const inns=()=>{ const fac=typeof taxiFac==='function'?taxiFac():'A'; if(!INN||INNfac!==fac){ INNfac=fac; INN=[]; for(const v of Object.values(META.vend||{})){ if(!/innkeeper/i.test(v[1]||'')||!String(v[2]||'').includes(fac)) continue; for(const [z,x,y] of (v[3]||[])){ const p=zp2plane(z,x,y); if(p) INN.push(p); } } } return INN; };
  function bindNear(s,p){ if(!PR.autoBind||!p) return; if(s.bind&&cont(s.bind)===cont(p)&&hyp(s.bind,p)<PR.autoBindYd) return; for(const n of inns()){ if(cont(n)!==cont(p)) continue; const d=hyp(n,p); if(d>PR.autoBindYd) continue; const w=2*d/runSp(s); s.t+=w+PR.talk; s.c.walkSec+=w; s.c.talks++; s.c.autoBind=(s.c.autoBind||0)+1; s.bind=n; if(FL) FL.push({k:CK,m:CM,kind:'home'}); return; } }
@@ -99,6 +99,9 @@ var SIMX=(function(){
    const run=runSp(s); const first=!PR.flyFirstOnly||CM===1; const pl=legPlan(s,a,to,run,first);
    // the hearthstone, when it is ready and saves enough (Polestar's addon rule: a leg of 3+ minutes, 2+ minutes saved)
    if(PR.autoHs&&first&&s.bind&&s.t>=s.hsReady&&pl.c>=PR.hsMinSec){ const ph=legPlan(s,s.bind,to,run,true); const hc=PR.hearthCast+ph.c; if(hc<pl.c-PR.hsGain){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.hsReady=s.t+PR.hearthCd; s.c.autoHs=(s.c.autoHs||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'hs'}); s.pos=s.bind; playLeg(s,s.bind,to,run,ph); learnNear(s,to); bindNear(s,to); return; } }
+   // a mage's portal to a capital (the group steps through; no cooldown, two mages): when it saves enough over walking or flying
+   if(PR.autoPortal&&first&&s.L>=PR.portalLevel&&pl.c>=PR.hsMinSec){ let bp=null; for(const [id,ex] of Object.entries(PR.portalNodes||{})){ const P=taxiPt(id); if(!P) continue; const pp=legPlan(s,P,to,run,true); const c=PR.portalCast+(+ex||0)+pp.c; if(c<pl.c-PR.portalGain&&(!bp||c<bp.c)) bp={c,id,P,pp,ex:+ex||0}; }
+     if(bp){ s.t+=PR.portalCast+bp.ex; s.c.fixedSec+=PR.portalCast+bp.ex; s.c.portals=(s.c.portals||0)+1; if(FL) FL.push({k:CK,m:CM,kind:'portal',node:bp.id}); s.pos=bp.P; s.fps.add(bp.id); playLeg(s,bp.P,to,run,bp.pp); learnNear(s,to); bindNear(s,to); return; } }
    playLeg(s,a,to,run,pl); learnNear(s,to); bindNear(s,to); }
  const nearest=(pts,p)=>{ let b=null,bd=1e18; for(const x of pts){ if(x.dg) continue; const d=p?(cont(x)===cont(p)?hyp(x,p):1e7+hyp(x,p)):0; if(d<bd){bd=d;b=x;} } return b; };
  // ---------- killing at a ground: pulls of up to pullSize targets, walking a nearest-neighbour tour; respawns after a full sweep ----------
@@ -150,6 +153,7 @@ function play(s,st,R){ const t0=s.t; const L0=s.L; let err=null;
       if(k==='fly'){ const dest=st.node||resolveNode(st); if(!dest||!META.taxi.nodes[dest]){ err='no node'; break; } const dn=META.taxi.nodes[dest]; const dep=st.from&&s.fps.has(st.from)&&META.taxi.nodes[st.from]&&META.taxi.nodes[st.from].m===cont(s.pos)?st.from:nearestNode(s.pos,s.fps); if(!dep||!s.fps.has(dest)&&!R.allFps){ err='fp unknown'; }
         if(dep&&dep!==dest&&META.taxi.nodes[dep].m===dn.m){ move(s,taxiPt(dep)); const fr=flightRoute(dep,dest); const sec=(fr&&fr.secs!=null?fr.secs:hyp(taxiPt(dep),taxiPt(dest))/PR.flySpeed)+PR.flyOver; s.t+=sec; s.c.flySec+=sec; s.pos=taxiPt(dest); } break; }
       if(k==='fp'){ const id=st.node||resolveNode(st); const p=id&&taxiPt(id); if(p){ move(s,p); s.fps.add(id); s.t+=PR.talk; s.c.talks++; } break; }
+      if(k==='portal'){ const id=st.node; const P=id&&taxiPt(id); if(!P){ err='no node'; break; } if(s.L<PR.portalLevel){ err='portal level'; break; } const ex=+((PR.portalNodes||{})[id]||0); s.t+=PR.portalCast+ex; s.c.fixedSec+=PR.portalCast+ex; s.c.portals=(s.c.portals||0)+1; s.pos=P; s.fps.add(id); break; } /* a mage's portal to a capital */
       if(k==='hs'||k==='home'){ if(k==='home'){ s.bind=s.pos; s.t+=PR.talk; break; } if(s.bind&&s.t>=s.hsReady){ s.t+=PR.hearthCast; s.c.fixedSec+=PR.hearthCast; s.pos=s.bind; s.hsReady=s.t+PR.hearthCd; } else err='hearth not ready'; break; }
       const p=stepPt(s,st); if(p) move(s,p); break; }
     case 'custom':{ const p=stepPt(s,st); if(p) move(s,p); if(st.act==='accept'||st.act==='turnin'){ s.t+=PR.talk; s.c.talks++; } if(st.act==='turnin'&&+st.xp>0){ const key='c:'+(st.name||st.id); if(!s.done.has(key)){ s.done.add(key); gain(s,+st.xp,'xpQuest'); } } break; }
