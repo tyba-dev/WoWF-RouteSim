@@ -8,7 +8,7 @@ const fixed=s=>s.mode==='run'||s.inRun||s.t==='custom'||s.t==='train'||s.t==='tr
 const RS=R.char.rested; const rst=L.I.S.runRested(R.steps,R.char,{tgt:59}).restStart;
 const full=st=>{ const lv=[]; const r=L.I.S.run(st,R.char,{tgt:59,err:true,snaps:true,rested:RS,restStart:rst,onStep:(k,s)=>{lv[k]=s.L;}}); return {r,lv}; };
 const ok=(st,lv)=>{ const hk=st.findIndex(s=>/^hyj/.test(s.id||'')); if(hk>=0&&lv[hk]<HYJ) return false; for(let k=0;k<st.length;k++){ const s=st[k]; if(s.mode==='run'&&W[s.dg]&&(lv[k]<W[s.dg][0]||lv[k]>W[s.dg][1]+2)) return false; } return true; };
-let st=R.steps.slice(); let F=full(st); const t0=F.r.lvT[59]; console.log('base t59',(t0/3600).toFixed(2),'errs',F.r.errs,'restStart h',(rst/3600).toFixed(1));
+let st=R.steps.slice(); let F=full(st); const t0=F.r.lvT[59]; console.log('base t59',(t0/3600).toFixed(2),'errs',F.r.errs,'restStart h',((rst||0)/3600).toFixed(1));
 const need=new Set(); for(const s of st){ const x=s.q&&Q(s.q); for(const p of [...(x&&x.ps||[]),...(x&&x.pg||[])]) need.add(p); }
 let acc=0; for(let pass=0;pass<3;pass++){ const S=F.r.snaps; const cost=new Map(); st.forEach((s,k)=>{ if(fixed(s)||!s.q||need.has(s.q)) return; const a=S[k],b=S[k+1]; if(!a||!b) return; const o=cost.get(s.q)||cost.set(s.q,{dt:0,dx:0,k0:k}).get(s.q); o.dt+=b.t-a.t; o.dx+=totalXP(b.L,b.xp)-totalXP(a.L,a.xp); });
   const cand=[...cost.entries()].sort((x,y)=>y[1].dt/(y[1].dx+500)-x[1].dt/(x[1].dx+500)).slice(0,N); let nA=0;
